@@ -7,6 +7,7 @@ import { AuthButtons } from "@/components/auth/auth-buttons";
 import { FolderProvider, useFolders } from "@/contexts/folder-context";
 import { NewFolderCard } from "@/components/folders/new-folder-card";
 import { FolderTree } from "@/components/folders/folder-tree";
+import { CreateFolderModal } from "@/components/folders/create-folder-modal";
 import { useAuth } from "@/contexts/auth-context";
 
 const navItems = [
@@ -79,6 +80,7 @@ function DashboardShell() {
   const [activeNav, setActiveNav] = useState("My Drive");
   const [deletingFolderId, setDeletingFolderId] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  const [isCreateFolderModalOpen, setIsCreateFolderModalOpen] = useState(false);
 
   const handleDeleteFolder = async (folderId: string) => {
     setDeletingFolderId(folderId);
@@ -144,7 +146,10 @@ function DashboardShell() {
 
         {/* New Button */}
         <div className="border-b border-zinc-200 px-4 py-3">
-          <button className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-3 text-sm font-medium text-white shadow-sm transition active:scale-[0.98] active:bg-emerald-700">
+          <button
+            onClick={() => setIsCreateFolderModalOpen(true)}
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-3 text-sm font-medium text-white shadow-sm transition active:scale-[0.98] active:bg-emerald-700"
+          >
             <span className="text-lg">+</span>
             <span>New</span>
           </button>
@@ -503,6 +508,12 @@ function DashboardShell() {
           </button>
         </nav>
       </main>
+
+      {/* Create Folder Modal */}
+      <CreateFolderModal
+        isOpen={isCreateFolderModalOpen}
+        onClose={() => setIsCreateFolderModalOpen(false)}
+      />
     </div>
   );
 }

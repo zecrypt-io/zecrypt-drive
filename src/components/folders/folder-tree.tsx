@@ -47,10 +47,10 @@ function TreeNode({ folderId, depth }: { folderId: string; depth: number }) {
         className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs transition active:scale-[0.98] active:bg-zinc-100 ${
           isRoot
             ? "bg-emerald-50 font-medium text-emerald-700"
-            : "text-zinc-600"
+            : "text-zinc-600 hover:bg-zinc-50"
         }`}
       >
-        <span className="text-sm">{isRoot ? "📁" : "└"}</span>
+        <span className="text-sm">📁</span>
         <span className="truncate text-left">{folder.name}</span>
       </button>
       {children.length > 0 && (

@@ -39,11 +39,17 @@ export function AuthProvider({ children }: PropsWithChildren) {
       (nextUser) => {
         setUser(nextUser);
         setLoading(false);
+        setError(null);
       },
       (err) => {
         console.error("Auth state error", err);
         setError(err.message);
         setLoading(false);
+        setUser(null);
+        // Redirect to login on auth errors
+        if (typeof window !== "undefined") {
+          window.location.href = "/login";
+        }
       },
     );
 
@@ -67,6 +73,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setError(null);
     try {
       await signOut(firebaseAuth);
+      // Redirect to login page after successful sign out
+      if (typeof window !== "undefined") {
+        window.location.href = "/login";
+      }
     } catch (err) {
       console.error("Sign-out failed", err);
       setError(
