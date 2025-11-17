@@ -1,36 +1,66 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+## ZeCrypt Drive
 
-## Getting Started
+Zero-knowledge, Google Drive–style storage built with Next.js (App Router) + Firebase Auth, Firestore, and DigitalOcean Spaces. Files are encrypted client-side before upload and decrypted only on the client after download.
 
-First, run the development server:
+### Key Capabilities
+- Firebase-authenticated users manage folders, upload/download encrypted files, and share via links or targeted ACLs.
+- File blobs live in DigitalOcean Spaces; metadata and sharing graph live in Firestore (MongoDB Atlas later for audits).
+- Frontend prioritizes mobile screens first, progressively enhancing for larger viewports.
 
+### Architecture & Roadmap
+- See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the system design, security model, and milestone plan.
+
+### Getting Started
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# open http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Environment Variables
+Create a `.env.local` with the following keys:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```
+NEXT_PUBLIC_FIREBASE_API_KEY=
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
+NEXT_PUBLIC_FIREBASE_APP_ID=
+FIREBASE_PROJECT_ID=
+FIREBASE_CLIENT_EMAIL=
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Public keys configure the client SDK; the private key / client email powers the Admin SDK for token verification.
 
-## Learn More
+### Firestore Setup
 
-To learn more about Next.js, take a look at the following resources:
+**Important:** You must create a Firestore database in your Firebase project before using this app.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. Go to [Firebase Console](https://console.firebase.google.com/)
+2. Select your project (`zecrypt-server`)
+3. Navigate to **Firestore Database** in the left sidebar
+4. Click **Create database**
+5. Choose **Start in production mode** (we'll use security rules)
+6. Select a location for your database (choose the closest region)
+7. Click **Enable**
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+**Security Rules:**
+Add these rules in Firestore → Rules:
 
-## Deploy on Vercel
+```js
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /folders/{id} {
+      allow read, write: if request.auth != null && request.auth.uid == resource.data.userId;
+    }
+    match /files/{id} {
+      allow read, write: if request.auth != null && request.auth.uid == resource.data.userId;
+    }
+  }
+}
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+**Note:** Collections (`folders`, `files`) are created automatically when you add the first document. No manual collection creation needed.
