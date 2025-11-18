@@ -93,7 +93,7 @@ function DashboardShell() {
     let currentId: string | null = currentFolderId;
     
     while (currentId && currentId !== rootId) {
-      const folderId = currentId;
+      const folderId: string = currentId;
       const folder = folders[folderId];
       if (folder) {
         breadcrumbs.unshift({ id: folder.id, name: folder.name });
