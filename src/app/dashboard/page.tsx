@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { AuthButtons } from "@/components/auth/auth-buttons";
 import { FolderProvider, useFolders } from "@/contexts/folder-context";
+import type { Folder as FolderType } from "@/contexts/folder-context";
 import { FolderTree } from "@/components/folders/folder-tree";
 import { CreateFolderModal } from "@/components/folders/create-folder-modal";
 import { DeleteFolderModal } from "@/components/folders/delete-folder-modal";
@@ -94,7 +95,7 @@ function DashboardShell() {
     
     while (currentId && currentId !== rootId) {
       const folderId: string = currentId;
-      const folder = folders[folderId];
+      const folder = folders[folderId] as FolderType | undefined;
       if (folder) {
         breadcrumbs.unshift({ id: folder.id, name: folder.name });
         currentId = folder.parentId;
