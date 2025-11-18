@@ -188,6 +188,7 @@ function DashboardShell() {
           </button>
         </div>
 
+
         {/* New Button - Hidden in Trash */}
         {activeNav !== "Trash" && (
           <div className="border-b border-zinc-200 px-4 py-3">
@@ -347,29 +348,38 @@ function DashboardShell() {
                     : folders[currentFolderId]?.name || "Folder"}
               </h2>
               
-              {/* View Mode Toggle - Only show for My Drive */}
+              {/* Actions - New Folder Button and View Mode Toggle */}
               {activeNav !== "Trash" && (
-                <div className="flex items-center gap-1 rounded-lg border border-zinc-200 bg-white p-1">
+                <div className="flex items-center gap-3">
                   <button
-                    onClick={() => setViewMode("grid")}
-                    className={`rounded px-3 py-1.5 text-xs font-medium transition ${
-                      viewMode === "grid"
-                        ? "bg-emerald-600 text-white"
-                        : "text-zinc-600 hover:bg-zinc-50"
-                    }`}
+                    onClick={() => setIsCreateFolderModalOpen(true)}
+                    className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-700 active:scale-[0.98]"
                   >
-                    Grid
+                    <span className="text-lg">+</span>
+                    <span>New Folder</span>
                   </button>
-                  <button
-                    onClick={() => setViewMode("list")}
-                    className={`rounded px-3 py-1.5 text-xs font-medium transition ${
-                      viewMode === "list"
-                        ? "bg-emerald-600 text-white"
-                        : "text-zinc-600 hover:bg-zinc-50"
-                    }`}
-                  >
-                    List
-                  </button>
+                  <div className="flex items-center gap-1 rounded-lg border border-zinc-200 bg-white p-1">
+                    <button
+                      onClick={() => setViewMode("grid")}
+                      className={`rounded px-3 py-1.5 text-xs font-medium transition ${
+                        viewMode === "grid"
+                          ? "bg-emerald-600 text-white"
+                          : "text-zinc-600 hover:bg-zinc-50"
+                      }`}
+                    >
+                      Grid
+                    </button>
+                    <button
+                      onClick={() => setViewMode("list")}
+                      className={`rounded px-3 py-1.5 text-xs font-medium transition ${
+                        viewMode === "list"
+                          ? "bg-emerald-600 text-white"
+                          : "text-zinc-600 hover:bg-zinc-50"
+                      }`}
+                    >
+                      List
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -481,21 +491,6 @@ function DashboardShell() {
             ) : viewMode === "grid" ? (
               /* Grid View */
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-                {/* New Folder Card - Only show when not in trash */}
-                {activeNav !== "Trash" && (
-                  <button
-                    onClick={() => setIsCreateFolderModalOpen(true)}
-                    className="group flex min-h-[100px] flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-zinc-300 bg-white p-4 transition active:scale-[0.98] active:border-emerald-400 active:bg-emerald-50/30"
-                  >
-                    <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-zinc-100 text-zinc-400 group-active:bg-emerald-100 group-active:text-emerald-600">
-                      <span className="text-2xl">+</span>
-                    </div>
-                    <p className="text-xs font-medium text-zinc-700 group-active:text-emerald-700">
-                      New Folder
-                    </p>
-                  </button>
-                )}
-
                 {/* Folders */}
                 {currentFolders.length > 0 ? (
                   currentFolders.map((folder) => (
@@ -554,24 +549,6 @@ function DashboardShell() {
               /* List View */
               <div className="rounded-xl border border-zinc-200 bg-white shadow-sm">
                 <div className="divide-y divide-zinc-100">
-                  {/* New Folder Row - Only show when not in trash */}
-                  {activeNav !== "Trash" && (
-                    <button
-                      onClick={() => setIsCreateFolderModalOpen(true)}
-                      className="flex w-full items-center gap-4 p-4 text-left transition active:bg-zinc-50"
-                    >
-                      <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-zinc-100 text-zinc-400">
-                        <span className="text-xl">+</span>
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-sm font-medium text-zinc-900">
-                          New Folder
-                        </p>
-                        <p className="text-xs text-zinc-500">Create a new folder</p>
-                      </div>
-                    </button>
-                  )}
-
                   {/* Folders */}
                   {currentFolders.length > 0 ? (
                     currentFolders.map((folder) => (
@@ -607,14 +584,12 @@ function DashboardShell() {
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleDeleteFolder(folder.id);
+                                  handleDeleteClick(folder.id);
                                 }}
                                 disabled={deletingFolderId === folder.id}
                                 className="w-full rounded-lg px-3 py-2 text-left text-xs text-red-600 transition hover:bg-red-50 active:bg-red-100 disabled:opacity-50"
                               >
-                                {deletingFolderId === folder.id
-                                  ? "Deleting..."
-                                  : "Delete"}
+                                Delete
                               </button>
                             </div>
                           )}
