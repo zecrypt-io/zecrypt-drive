@@ -4,7 +4,11 @@ import {
   createFolder as createFolderDoc,
   getFolderById,
   listFoldersForUser,
+  listTrashFolders,
   deleteFolder as deleteFolderDoc,
+  restoreFolder,
+  permanentDeleteFolder,
+  getFolderChildrenCount,
 } from "@/lib/db";
 
 const ROOT_ID = "root";
@@ -22,8 +26,22 @@ async function authenticate(request: Request) {
 export async function GET(request: Request) {
   try {
     const userId = await authenticate(request);
-    const folders = await listFoldersForUser(userId);
+    const { searchParams } = new URL(request.url);
+    const trash = searchParams.get("trash") === "true";
+    const folderId = searchParams.get("folderId");
+    const count = searchParams.get("count") === "true";
 
+    if (count && folderId) {
+      const counts = await getFolderChildrenCount(folderId, userId);
+      return NextResponse.json({ counts });
+    }
+
+    if (trash) {
+      const folders = await listTrashFolders(userId);
+      return NextResponse.json({ folders });
+    }
+
+    const folders = await listFoldersForUser(userId);
     return NextResponse.json({ folders });
   } catch (error) {
     console.error("Error fetching folders:", error);
@@ -93,6 +111,7 @@ export async function DELETE(request: Request) {
     const userId = await authenticate(request);
     const { searchParams } = new URL(request.url);
     const folderId = searchParams.get("id");
+    const permanent = searchParams.get("permanent") === "true";
 
     if (!folderId) {
       return NextResponse.json(
@@ -108,12 +127,47 @@ export async function DELETE(request: Request) {
       );
     }
 
-    await deleteFolderDoc(folderId, userId);
+    if (permanent) {
+      await permanentDeleteFolder(folderId, userId);
+    } else {
+      await deleteFolderDoc(folderId, userId);
+    }
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to delete folder";
+    const status = message === "Unauthorized" ? 401 : 500;
+    return NextResponse.json({ error: message }, { status });
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const userId = await authenticate(request);
+    const body = await request.json();
+    const folderId = body.folderId;
+    const action = body.action; // "restore"
+
+    if (!folderId) {
+      return NextResponse.json(
+        { error: "Folder ID is required." },
+        { status: 400 },
+      );
+    }
+
+    if (action === "restore") {
+      await restoreFolder(folderId, userId);
+      return NextResponse.json({ success: true }, { status: 200 });
+    }
+
+    return NextResponse.json(
+      { error: "Invalid action." },
+      { status: 400 },
+    );
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to restore folder";
     const status = message === "Unauthorized" ? 401 : 500;
     return NextResponse.json({ error: message }, { status });
   }

@@ -1,30 +1,34 @@
 "use client";
 
-import { FormEvent, useMemo, useState, useEffect } from "react";
+import { FormEvent, useState, useEffect } from "react";
 import { useFolders } from "@/contexts/folder-context";
 
 type CreateFolderModalProps = {
   isOpen: boolean;
   onClose: () => void;
+  defaultParentId?: string;
 };
 
-export function CreateFolderModal({ isOpen, onClose }: CreateFolderModalProps) {
-  const { createFolder, rootId, folders, getChildren, loading } = useFolders();
+export function CreateFolderModal({ isOpen, onClose, defaultParentId }: CreateFolderModalProps) {
+  const { createFolder, rootId, folders, loading } = useFolders();
   const [name, setName] = useState("");
-  const [parentId, setParentId] = useState(rootId);
   const [status, setStatus] = useState<"idle" | "success" | "error">("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Get the parent folder name for display
+  const parentFolderName = defaultParentId === rootId 
+    ? "My Drive" 
+    : folders[defaultParentId || rootId]?.name || "My Drive";
 
   // Reset form when modal opens/closes
   useEffect(() => {
     if (isOpen) {
       setName("");
-      setParentId(rootId);
       setStatus("idle");
       setMessage(null);
     }
-  }, [isOpen, rootId]);
+  }, [isOpen]);
 
   // Close modal on Escape key
   useEffect(() => {
@@ -37,26 +41,6 @@ export function CreateFolderModal({ isOpen, onClose }: CreateFolderModalProps) {
     return () => document.removeEventListener("keydown", handleEscape);
   }, [isOpen, onClose]);
 
-  const options = useMemo(() => {
-    const ordered: Array<{ id: string; label: string }> = [];
-    const rootFolder = folders[rootId];
-    if (rootFolder) {
-      ordered.push({ id: rootId, label: rootFolder.name });
-      const walk = (id: string, depth: number) => {
-        const children = getChildren(id);
-        children.forEach((child) => {
-          ordered.push({
-            id: child.id,
-            label: `${"— ".repeat(depth + 1)}${child.name}`,
-          });
-          walk(child.id, depth + 1);
-        });
-      };
-      walk(rootId, 0);
-    }
-    return ordered;
-  }, [folders, getChildren, rootId]);
-
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     setStatus("idle");
@@ -64,11 +48,11 @@ export function CreateFolderModal({ isOpen, onClose }: CreateFolderModalProps) {
     setSubmitting(true);
 
     try {
+      const parentId = defaultParentId || rootId;
       const folder = await createFolder({ name, parentId });
       setStatus("success");
       setMessage(`Folder "${folder.name}" created successfully!`);
       setName("");
-      setParentId(rootId);
       
       // Close modal after a short delay
       setTimeout(() => {
@@ -111,7 +95,9 @@ export function CreateFolderModal({ isOpen, onClose }: CreateFolderModalProps) {
               <h2 className="text-lg font-semibold text-zinc-900">
                 Create New Folder
               </h2>
-              <p className="text-xs text-zinc-500">Add a folder to organize your files</p>
+              <p className="text-xs text-zinc-500">
+                Will be created in <span className="font-medium text-zinc-700">{parentFolderName}</span>
+              </p>
             </div>
           </div>
           <button
@@ -137,24 +123,6 @@ export function CreateFolderModal({ isOpen, onClose }: CreateFolderModalProps) {
               autoFocus
               disabled={submitting}
             />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-zinc-700 mb-2">
-              Location
-            </label>
-            <select
-              value={parentId}
-              onChange={(e) => setParentId(e.target.value)}
-              className="w-full rounded-lg border border-zinc-300 bg-white px-4 py-3 text-sm text-zinc-900 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-              disabled={submitting || loading}
-            >
-              {options.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
           </div>
 
           {message && (

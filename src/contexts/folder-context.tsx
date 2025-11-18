@@ -17,16 +17,21 @@ export type Folder = {
   parentId: string | null;
   createdAt: number;
   userId?: string;
+  deletedAt?: number;
 };
 
 type FolderContextValue = {
   folders: Record<string, Folder>;
+  trashFolders: Folder[];
   rootId: string;
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
+  refreshTrash: () => Promise<void>;
   createFolder: (input: { name: string; parentId?: string }) => Promise<Folder>;
   deleteFolder: (folderId: string) => Promise<void>;
+  restoreFolder: (folderId: string) => Promise<void>;
+  permanentDeleteFolder: (folderId: string) => Promise<void>;
   getChildren: (parentId: string) => Folder[];
 };
 
@@ -46,6 +51,7 @@ export function FolderProvider({ children }: PropsWithChildren) {
   const [folders, setFolders] = useState<Record<string, Folder>>({
     [rootFolderId]: rootFolder,
   });
+  const [trashFolders, setTrashFolders] = useState<Folder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -81,9 +87,33 @@ export function FolderProvider({ children }: PropsWithChildren) {
     }
   }, [user]);
 
+  const refreshTrash = useCallback(async () => {
+    if (!user) {
+      setTrashFolders([]);
+      return;
+    }
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch("/api/folders?trash=true", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (!response.ok) {
+        throw new Error("Unable to load trash.");
+      }
+      const data = await response.json();
+      setTrashFolders(data.folders as Folder[]);
+    } catch (err) {
+      console.error("Error loading trash:", err);
+      setTrashFolders([]);
+    }
+  }, [user]);
+
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+    void refreshTrash();
+  }, [refresh, refreshTrash]);
 
   const createFolder = useCallback(
     async ({ name, parentId = rootFolderId }: { name: string; parentId?: string }) => {
@@ -151,6 +181,93 @@ export function FolderProvider({ children }: PropsWithChildren) {
         throw new Error(data.error ?? "Unable to delete folder.");
       }
 
+      // Update folder to mark as deleted (soft delete)
+      setFolders((prev) => {
+        const updated = { ...prev };
+        if (updated[folderId]) {
+          updated[folderId] = { ...updated[folderId], deletedAt: Date.now() };
+        }
+        return updated;
+      });
+      // Refresh to ensure consistency
+      await refresh();
+      await refreshTrash();
+    },
+    [folders, user, refresh, refreshTrash],
+  );
+
+  const findFolderLocally = useCallback(
+    (folderId: string) =>
+      folders[folderId] ?? trashFolders.find((folder) => folder.id === folderId),
+    [folders, trashFolders],
+  );
+
+  const restoreFolder = useCallback(
+    async (folderId: string) => {
+      const folder = findFolderLocally(folderId);
+      if (!folder) {
+        throw new Error("Folder not found.");
+      }
+      if (!user) {
+        throw new Error("You must be signed in.");
+      }
+
+      const token = await user.getIdToken();
+      const response = await fetch("/api/folders", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ folderId, action: "restore" }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error ?? "Unable to restore folder.");
+      }
+
+      // Remove deletedAt from local state
+      setFolders((prev) => {
+        const updated = { ...prev };
+        if (updated[folderId]) {
+          const { deletedAt, ...rest } = updated[folderId];
+          updated[folderId] = rest;
+        }
+        return updated;
+      });
+      // Refresh to ensure consistency
+      await Promise.all([refresh(), refreshTrash()]);
+    },
+    [findFolderLocally, user, refresh, refreshTrash],
+  );
+
+  const permanentDeleteFolder = useCallback(
+    async (folderId: string) => {
+      const folder = findFolderLocally(folderId);
+      if (!folder) {
+        throw new Error("Folder not found.");
+      }
+      if (!user) {
+        throw new Error("You must be signed in.");
+      }
+
+      const token = await user.getIdToken();
+      const response = await fetch(
+        `/api/folders?id=${encodeURIComponent(folderId)}&permanent=true`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error ?? "Unable to permanently delete folder.");
+      }
+
       // Remove from local state
       setFolders((prev) => {
         const updated = { ...prev };
@@ -158,15 +275,15 @@ export function FolderProvider({ children }: PropsWithChildren) {
         return updated;
       });
       // Refresh to ensure consistency
-      await refresh();
+      await refreshTrash();
     },
-    [folders, user, refresh],
+    [findFolderLocally, user, refreshTrash],
   );
 
   const getChildren = useCallback(
     (parentId: string) =>
       Object.values(folders)
-        .filter((folder) => folder.parentId === parentId)
+        .filter((folder) => folder.parentId === parentId && !folder.deletedAt)
         .sort((a, b) => a.name.localeCompare(b.name)),
     [folders],
   );
@@ -174,15 +291,31 @@ export function FolderProvider({ children }: PropsWithChildren) {
   const value = useMemo(
     () => ({
       folders,
+      trashFolders,
       rootId: rootFolderId,
       loading,
       error,
       refresh,
+      refreshTrash,
       createFolder,
       deleteFolder,
+      restoreFolder,
+      permanentDeleteFolder,
       getChildren,
     }),
-    [folders, loading, error, refresh, createFolder, deleteFolder, getChildren],
+    [
+      folders,
+      trashFolders,
+      loading,
+      error,
+      refresh,
+      refreshTrash,
+      createFolder,
+      deleteFolder,
+      restoreFolder,
+      permanentDeleteFolder,
+      getChildren,
+    ],
   );
 
   return (

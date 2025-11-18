@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import Image from "next/image";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { AuthButtons } from "@/components/auth/auth-buttons";
 import { FolderProvider, useFolders } from "@/contexts/folder-context";
-import { NewFolderCard } from "@/components/folders/new-folder-card";
 import { FolderTree } from "@/components/folders/folder-tree";
 import { CreateFolderModal } from "@/components/folders/create-folder-modal";
+import { DeleteFolderModal } from "@/components/folders/delete-folder-modal";
 import { useAuth } from "@/contexts/auth-context";
 
 const navItems = [
@@ -17,76 +18,119 @@ const navItems = [
   { label: "Trash", icon: "🗑️" },
 ];
 
-const quickAccessItems = [
-  {
-    title: "Q3 Report.pptx",
-    timestamp: "2h ago",
-    icon: "📊",
-    color: "bg-orange-100",
-    iconColor: "text-orange-600",
-  },
-  {
-    title: "Project Plan.docx",
-    timestamp: "1d ago",
-    icon: "📄",
-    color: "bg-blue-100",
-    iconColor: "text-blue-600",
-  },
-  {
-    title: "Budget_2024.xlsx",
-    timestamp: "3d ago",
-    icon: "📈",
-    color: "bg-green-100",
-    iconColor: "text-green-600",
-  },
-  {
-    title: "Onboarding Guide.pdf",
-    timestamp: "1w ago",
-    icon: "📕",
-    color: "bg-red-100",
-    iconColor: "text-red-600",
-  },
-];
-
-const filePlaceholders = [
-  {
-    name: "Meeting Notes.docx",
-    owner: "me",
-    modified: "Jan 22",
-    size: "2.1 MB",
-    icon: "📄",
-  },
-  {
-    name: "Vacation_01.jpg",
-    owner: "me",
-    modified: "Jan 15",
-    size: "4.5 MB",
-    icon: "🖼️",
-  },
-  {
-    name: "Strategy.v2.key",
-    owner: "me",
-    modified: "Jan 10",
-    size: "12 MB",
-    icon: "📊",
-  },
-];
-
 function DashboardShell() {
-  const { rootId, getChildren, loading, deleteFolder } = useFolders();
+  const { rootId, getChildren, loading, deleteFolder, restoreFolder, permanentDeleteFolder, folders, trashFolders, refreshTrash } = useFolders();
   const { user } = useAuth();
-  const topFolders = getChildren(rootId);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [currentFolderId, setCurrentFolderId] = useState(rootId);
+  const currentFolders = getChildren(currentFolderId);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeNav, setActiveNav] = useState("My Drive");
+  const [restoringFolderId, setRestoringFolderId] = useState<string | null>(null);
+  const [permanentlyDeletingFolderId, setPermanentlyDeletingFolderId] = useState<string | null>(null);
   const [deletingFolderId, setDeletingFolderId] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [isCreateFolderModalOpen, setIsCreateFolderModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [folderToDelete, setFolderToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const isInitialLoad = useRef(true);
+  const lastUrlFolderId = useRef<string | null>(null);
 
-  const handleDeleteFolder = async (folderId: string) => {
+  // Load folder from URL on initial mount only
+  useEffect(() => {
+    if (!loading && Object.keys(folders).length > 0 && isInitialLoad.current) {
+      const folderIdFromUrl = searchParams.get("folder");
+      lastUrlFolderId.current = folderIdFromUrl;
+      
+      if (folderIdFromUrl && folders[folderIdFromUrl]) {
+        // Validate that the folder exists and set it
+        setCurrentFolderId(folderIdFromUrl);
+      } else if (folderIdFromUrl && !folders[folderIdFromUrl]) {
+        // Folder doesn't exist, navigate to root
+        router.replace("/dashboard", { scroll: false });
+        setCurrentFolderId(rootId);
+      }
+      isInitialLoad.current = false;
+    }
+  }, [loading, folders, searchParams, router, rootId]);
+
+  // Update URL when folder changes (but not on initial load)
+  useEffect(() => {
+    if (isInitialLoad.current) return;
+    
+    const currentUrlFolder = searchParams.get("folder");
+    const shouldUpdateUrl = 
+      (currentFolderId !== rootId && currentUrlFolder !== currentFolderId) ||
+      (currentFolderId === rootId && currentUrlFolder !== null);
+
+    if (shouldUpdateUrl) {
+      if (currentFolderId && currentFolderId !== rootId) {
+        router.replace(`/dashboard?folder=${currentFolderId}`, { scroll: false });
+      } else {
+        router.replace("/dashboard", { scroll: false });
+      }
+    }
+  }, [currentFolderId, rootId, router, searchParams]);
+
+  // Build breadcrumb path
+  const getBreadcrumbs = () => {
+    const breadcrumbs: Array<{ id: string; name: string }> = [];
+    let currentId: string | null = currentFolderId;
+    
+    while (currentId && currentId !== rootId) {
+      const folder = folders[currentId];
+      if (folder) {
+        breadcrumbs.unshift({ id: folder.id, name: folder.name });
+        currentId = folder.parentId;
+      } else {
+        break;
+      }
+    }
+    
+    // Add root at the beginning
+    breadcrumbs.unshift({ id: rootId, name: "My Drive" });
+    return breadcrumbs;
+  };
+
+  const handleFolderClick = (folderId: string) => {
+    setCurrentFolderId(folderId);
+  };
+
+  const handleBreadcrumbClick = (folderId: string) => {
+    setCurrentFolderId(folderId);
+  };
+
+  const handleDeleteClick = (folderId: string) => {
+    const folder = folders[folderId];
+    if (folder) {
+      setFolderToDelete({ id: folderId, name: folder.name });
+      setIsDeleteModalOpen(true);
+      setShowDeleteConfirm(null);
+    }
+  };
+
+  const handleDeleteFolder = async () => {
+    if (!folderToDelete) return;
+    
+    const folderId = folderToDelete.id;
     setDeletingFolderId(folderId);
+    
+    // Get folder info before deletion
+    const folder = folders[folderId];
+    const parentId = folder?.parentId || rootId;
+    const isCurrentFolder = folderId === currentFolderId;
+    
     try {
       await deleteFolder(folderId);
-      setShowDeleteConfirm(null);
+      setIsDeleteModalOpen(false);
+      setFolderToDelete(null);
+      
+      // If we deleted the current folder, navigate to its parent or root
+      if (isCurrentFolder) {
+        setCurrentFolderId(parentId);
+      }
     } catch (error) {
       alert(error instanceof Error ? error.message : "Failed to delete folder");
     } finally {
@@ -144,16 +188,18 @@ function DashboardShell() {
           </button>
         </div>
 
-        {/* New Button */}
-        <div className="border-b border-zinc-200 px-4 py-3">
-          <button
-            onClick={() => setIsCreateFolderModalOpen(true)}
-            className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-3 text-sm font-medium text-white shadow-sm transition active:scale-[0.98] active:bg-emerald-700"
-          >
-            <span className="text-lg">+</span>
-            <span>New</span>
-          </button>
-        </div>
+        {/* New Button - Hidden in Trash */}
+        {activeNav !== "Trash" && (
+          <div className="border-b border-zinc-200 px-4 py-3">
+            <button
+              onClick={() => setIsCreateFolderModalOpen(true)}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-3 text-sm font-medium text-white shadow-sm transition active:scale-[0.98] active:bg-emerald-700"
+            >
+              <span className="text-lg">+</span>
+              <span>New</span>
+            </button>
+          </div>
+        )}
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto px-2 py-2">
@@ -164,6 +210,11 @@ function DashboardShell() {
                 onClick={() => {
                   setActiveNav(item.label);
                   setSidebarOpen(false);
+                  if (item.label === "Trash") {
+                    refreshTrash();
+                  } else if (item.label === "My Drive") {
+                    setCurrentFolderId(rootId);
+                  }
                 }}
                 className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition active:scale-[0.98] ${
                   activeNav === item.label
@@ -262,86 +313,204 @@ function DashboardShell() {
 
         {/* Scrollable Content - Mobile Optimized */}
         <div className="flex-1 overflow-y-auto bg-zinc-50 pb-20 lg:pb-6">
-          <div className="mx-auto w-full max-w-7xl space-y-6 p-4 lg:space-y-8 lg:p-6">
-            {/* My Drive Title */}
-            <div>
-              <h2 className="text-xl font-semibold text-zinc-900 lg:text-2xl">
-                My Drive
-              </h2>
-            </div>
+          <div className="mx-auto w-full max-w-7xl p-4 lg:p-6">
+            {/* Breadcrumbs */}
+            {currentFolderId !== rootId && (
+              <div className="mb-4 flex items-center gap-2 overflow-x-auto">
+                {getBreadcrumbs().map((crumb, index) => (
+                  <div key={crumb.id} className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => handleBreadcrumbClick(crumb.id)}
+                      className={`text-sm transition ${
+                        index === getBreadcrumbs().length - 1
+                          ? "font-semibold text-zinc-900"
+                          : "text-zinc-600 hover:text-emerald-600"
+                      }`}
+                    >
+                      {crumb.name}
+                    </button>
+                    {index < getBreadcrumbs().length - 1 && (
+                      <span className="text-zinc-400">/</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
 
-            {/* Quick Access Section - Mobile Grid */}
-            <section>
-              <div className="mb-4 flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-zinc-700">
-                  Quick Access
-                </h3>
-                <div className="hidden items-center gap-1 rounded-lg border border-zinc-200 bg-white p-1 lg:flex">
-                  <button className="rounded px-2 py-1 text-xs text-emerald-600">
+            {/* Header */}
+            <div className="mb-6 flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-zinc-900 lg:text-2xl">
+                {activeNav === "Trash" 
+                  ? "Trash" 
+                  : currentFolderId === rootId 
+                    ? "My Drive" 
+                    : folders[currentFolderId]?.name || "Folder"}
+              </h2>
+              
+              {/* View Mode Toggle - Only show for My Drive */}
+              {activeNav !== "Trash" && (
+                <div className="flex items-center gap-1 rounded-lg border border-zinc-200 bg-white p-1">
+                  <button
+                    onClick={() => setViewMode("grid")}
+                    className={`rounded px-3 py-1.5 text-xs font-medium transition ${
+                      viewMode === "grid"
+                        ? "bg-emerald-600 text-white"
+                        : "text-zinc-600 hover:bg-zinc-50"
+                    }`}
+                  >
                     Grid
                   </button>
-                  <button className="rounded px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-50">
+                  <button
+                    onClick={() => setViewMode("list")}
+                    className={`rounded px-3 py-1.5 text-xs font-medium transition ${
+                      viewMode === "list"
+                        ? "bg-emerald-600 text-white"
+                        : "text-zinc-600 hover:bg-zinc-50"
+                    }`}
+                  >
                     List
                   </button>
                 </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                {quickAccessItems.map((item) => (
-                  <button
-                    key={item.title}
-                    className="group rounded-xl border border-zinc-200 bg-white p-3 shadow-sm transition active:scale-[0.98] active:shadow-md lg:p-4"
-                  >
-                    <div
-                      className={`mb-2 flex h-20 items-center justify-center rounded-lg lg:h-32 ${item.color}`}
-                    >
-                      <span className={`text-3xl lg:text-4xl ${item.iconColor}`}>
-                        {item.icon}
-                      </span>
+              )}
+            </div>
+
+            {/* Trash View */}
+            {activeNav === "Trash" ? (
+              <div className="rounded-xl border border-zinc-200 bg-white shadow-sm">
+                <div className="border-b border-zinc-200 p-4">
+                  <p className="text-sm text-zinc-600">
+                    Items in trash will be permanently deleted after 30 days.
+                  </p>
+                </div>
+                <div className="divide-y divide-zinc-100">
+                  {trashFolders.length > 0 ? (
+                    trashFolders.map((folder) => {
+                      const daysSinceDeletion = folder.deletedAt
+                        ? Math.floor((Date.now() - folder.deletedAt) / (1000 * 60 * 60 * 24))
+                        : 0;
+                      const daysRemaining = Math.max(0, 30 - daysSinceDeletion);
+                      const canPermanentDelete = daysSinceDeletion >= 30;
+
+                      return (
+                        <div
+                          key={folder.id}
+                          className="group relative flex items-center gap-4 p-4 transition hover:bg-zinc-50"
+                        >
+                          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-zinc-600">
+                            <span className="text-2xl">📁</span>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="truncate text-sm font-medium text-zinc-900">
+                              {folder.name}
+                            </p>
+                            <p className="text-xs text-zinc-500">
+                              Deleted {daysSinceDeletion === 0 
+                                ? "today" 
+                                : daysSinceDeletion === 1 
+                                  ? "yesterday" 
+                                  : `${daysSinceDeletion} days ago`}
+                              {daysRemaining > 0 && (
+                                <span className="ml-2 text-orange-600">
+                                  • {daysRemaining} days until permanent deletion
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={async () => {
+                                setRestoringFolderId(folder.id);
+                                try {
+                                  await restoreFolder(folder.id);
+                                } catch (error) {
+                                  alert(error instanceof Error ? error.message : "Failed to restore folder");
+                                } finally {
+                                  setRestoringFolderId(null);
+                                }
+                              }}
+                              disabled={restoringFolderId === folder.id}
+                              className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50"
+                            >
+                              {restoringFolderId === folder.id ? "Restoring..." : "Restore"}
+                            </button>
+                            {canPermanentDelete && (
+                              <button
+                                onClick={async () => {
+                                  if (!confirm(`Permanently delete "${folder.name}"? This action cannot be undone.`)) {
+                                    return;
+                                  }
+                                  setPermanentlyDeletingFolderId(folder.id);
+                                  try {
+                                    await permanentDeleteFolder(folder.id);
+                                  } catch (error) {
+                                    alert(error instanceof Error ? error.message : "Failed to permanently delete folder");
+                                  } finally {
+                                    setPermanentlyDeletingFolderId(null);
+                                  }
+                                }}
+                                disabled={permanentlyDeletingFolderId === folder.id}
+                                className="rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 transition hover:bg-red-100 disabled:opacity-50"
+                              >
+                                {permanentlyDeletingFolderId === folder.id ? "Deleting..." : "Delete Forever"}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="py-12 text-center">
+                      <p className="text-sm text-zinc-500">Trash is empty</p>
                     </div>
-                    <p className="truncate text-xs font-medium text-zinc-900 lg:text-sm">
-                      {item.title}
-                    </p>
-                    <p className="mt-0.5 text-[10px] text-zinc-500 lg:text-xs">
-                      {item.timestamp}
-                    </p>
-                  </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <>
+                {loading ? (
+              <div className={viewMode === "grid" ? "grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5" : "space-y-2"}>
+                {[0, 1, 2, 3, 4].map((idx) => (
+                  <div
+                    key={idx}
+                    className={`animate-pulse rounded-xl bg-zinc-100 ${
+                      viewMode === "grid" ? "h-24" : "h-16"
+                    }`}
+                  />
                 ))}
               </div>
-            </section>
+            ) : viewMode === "grid" ? (
+              /* Grid View */
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                {/* New Folder Card - Only show when not in trash */}
+                {activeNav !== "Trash" && (
+                  <button
+                    onClick={() => setIsCreateFolderModalOpen(true)}
+                    className="group flex min-h-[100px] flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-zinc-300 bg-white p-4 transition active:scale-[0.98] active:border-emerald-400 active:bg-emerald-50/30"
+                  >
+                    <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-zinc-100 text-zinc-400 group-active:bg-emerald-100 group-active:text-emerald-600">
+                      <span className="text-2xl">+</span>
+                    </div>
+                    <p className="text-xs font-medium text-zinc-700 group-active:text-emerald-700">
+                      New Folder
+                    </p>
+                  </button>
+                )}
 
-            {/* Folders Section - Mobile Cards */}
-            <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm lg:p-6">
-              <div className="mb-4 flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-zinc-700">Folders</h3>
-                <button className="text-xs font-medium text-emerald-600 active:text-emerald-700">
-                  View all
-                </button>
-              </div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <NewFolderCard />
-                {loading ? (
-                  [0, 1, 2].map((idx) => (
-                    <div
-                      key={idx}
-                      className="h-20 animate-pulse rounded-xl bg-zinc-100 lg:h-24"
-                    />
-                  ))
-                ) : topFolders.length > 0 ? (
-                  topFolders.map((folder) => (
-                    <div
+                {/* Folders */}
+                {currentFolders.length > 0 ? (
+                  currentFolders.map((folder) => (
+                    <button
                       key={folder.id}
-                      className="group relative flex items-center gap-3 rounded-xl border border-zinc-200 p-3 transition active:scale-[0.98] active:border-emerald-300 active:bg-emerald-50/50 lg:p-4"
+                      onClick={() => handleFolderClick(folder.id)}
+                      className="group relative flex flex-col items-center gap-2 rounded-xl border border-zinc-200 bg-white p-4 transition active:scale-[0.98] active:border-emerald-300 active:bg-emerald-50/50 hover:border-emerald-300 hover:bg-emerald-50/30"
                     >
-                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
-                        <span className="text-xl lg:text-2xl">📁</span>
+                      <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
+                        <span className="text-3xl">📁</span>
                       </div>
-                      <div className="flex-1 min-w-0 text-left">
-                        <p className="truncate text-sm font-medium text-zinc-900">
-                          {folder.name}
-                        </p>
-                        <p className="text-xs text-zinc-500">Updated just now</p>
-                      </div>
-                      <div className="relative">
+                      <p className="w-full truncate text-center text-xs font-medium text-zinc-900">
+                        {folder.name}
+                      </p>
+                      <div className="absolute right-2 top-2" onClick={(e) => e.stopPropagation()}>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -349,135 +518,123 @@ function DashboardShell() {
                               showDeleteConfirm === folder.id ? null : folder.id,
                             );
                           }}
-                          className="shrink-0 rounded-lg p-1.5 text-zinc-400 active:bg-zinc-100 lg:opacity-0 lg:group-hover:opacity-100"
+                          className="rounded-lg p-1.5 text-zinc-400 opacity-0 transition hover:bg-zinc-100 group-hover:opacity-100 active:opacity-100"
                           disabled={deletingFolderId === folder.id}
                         >
-                          <span className="text-lg">⋯</span>
+                          <span className="text-sm">⋯</span>
                         </button>
                         {showDeleteConfirm === folder.id && (
                           <div className="absolute right-0 top-full z-10 mt-1 w-32 rounded-lg border border-zinc-200 bg-white shadow-lg">
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleDeleteFolder(folder.id);
+                                handleDeleteClick(folder.id);
                               }}
                               disabled={deletingFolderId === folder.id}
                               className="w-full rounded-lg px-3 py-2 text-left text-xs text-red-600 transition hover:bg-red-50 active:bg-red-100 disabled:opacity-50"
                             >
-                              {deletingFolderId === folder.id
-                                ? "Deleting..."
-                                : "Delete"}
+                              Delete
                             </button>
                           </div>
                         )}
                       </div>
-                    </div>
+                    </button>
                   ))
                 ) : (
-                  <p className="col-span-full text-center text-sm text-zinc-500">
-                    Create your first folder to see it here.
-                  </p>
+                  <div className="col-span-full py-12 text-center">
+                    <p className="text-sm text-zinc-500">
+                      {currentFolderId === rootId
+                        ? "No folders yet. Create your first folder to get started."
+                        : "This folder is empty."}
+                    </p>
+                  </div>
                 )}
               </div>
-            </section>
-
-            {/* Files Section - Mobile Card View */}
-            <section className="rounded-xl border border-zinc-200 bg-white shadow-sm">
-              <div className="border-b border-zinc-200 p-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-zinc-700">Files</h3>
-                  <button className="text-xs font-medium text-emerald-600 active:text-emerald-700">
-                    Manage
-                  </button>
-                </div>
-              </div>
-
-              {/* Mobile Card View */}
-              <div className="divide-y divide-zinc-100 lg:hidden">
-                {filePlaceholders.map((file) => (
-                  <button
-                    key={file.name}
-                    className="flex w-full items-center gap-3 p-4 text-left transition active:bg-zinc-50"
-                  >
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-zinc-100">
-                      <span className="text-2xl">{file.icon}</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="truncate text-sm font-medium text-zinc-900">
-                        {file.name}
-                      </p>
-                      <div className="mt-1 flex items-center gap-2 text-xs text-zinc-500">
-                        <span>{file.modified}</span>
-                        <span>•</span>
-                        <span>{file.size}</span>
-                      </div>
-                    </div>
+            ) : (
+              /* List View */
+              <div className="rounded-xl border border-zinc-200 bg-white shadow-sm">
+                <div className="divide-y divide-zinc-100">
+                  {/* New Folder Row - Only show when not in trash */}
+                  {activeNav !== "Trash" && (
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                      }}
-                      className="shrink-0 rounded-lg p-2 text-zinc-400 active:bg-zinc-100"
+                      onClick={() => setIsCreateFolderModalOpen(true)}
+                      className="flex w-full items-center gap-4 p-4 text-left transition active:bg-zinc-50"
                     >
-                      <span className="text-lg">⋯</span>
+                      <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-zinc-100 text-zinc-400">
+                        <span className="text-xl">+</span>
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-zinc-900">
+                          New Folder
+                        </p>
+                        <p className="text-xs text-zinc-500">Create a new folder</p>
+                      </div>
                     </button>
-                  </button>
-                ))}
-              </div>
+                  )}
 
-              {/* Desktop Table View */}
-              <div className="hidden overflow-x-auto lg:block">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-zinc-200 bg-zinc-50">
-                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-zinc-600">
-                        Name
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-zinc-600">
-                        Owner
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-zinc-600">
-                        Last Modified
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-zinc-600">
-                        File Size
-                      </th>
-                      <th className="w-12"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-100">
-                    {filePlaceholders.map((file) => (
-                      <tr
-                        key={file.name}
-                        className="group cursor-pointer transition hover:bg-zinc-50"
+                  {/* Folders */}
+                  {currentFolders.length > 0 ? (
+                    currentFolders.map((folder) => (
+                      <button
+                        key={folder.id}
+                        onClick={() => handleFolderClick(folder.id)}
+                        className="group relative flex w-full items-center gap-4 p-4 text-left transition hover:bg-zinc-50 active:bg-emerald-50/30"
                       >
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-3">
-                            <span className="text-lg">{file.icon}</span>
-                            <span className="text-sm font-medium text-zinc-900">
-                              {file.name}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-sm text-zinc-600">
-                          {file.owner}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-zinc-600">
-                          {file.modified}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-zinc-600">
-                          {file.size}
-                        </td>
-                        <td className="px-4 py-3">
-                          <button className="opacity-0 text-zinc-400 transition group-hover:opacity-100">
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
+                          <span className="text-2xl">📁</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="truncate text-sm font-medium text-zinc-900">
+                            {folder.name}
+                          </p>
+                          <p className="text-xs text-zinc-500">Updated just now</p>
+                        </div>
+                        <div className="relative">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setShowDeleteConfirm(
+                                showDeleteConfirm === folder.id ? null : folder.id,
+                              );
+                            }}
+                            className="rounded-lg p-2 text-zinc-400 opacity-0 transition hover:bg-zinc-100 group-hover:opacity-100 active:opacity-100"
+                            disabled={deletingFolderId === folder.id}
+                          >
                             <span className="text-lg">⋯</span>
                           </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                          {showDeleteConfirm === folder.id && (
+                            <div className="absolute right-0 top-full z-10 mt-1 w-32 rounded-lg border border-zinc-200 bg-white shadow-lg">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteFolder(folder.id);
+                                }}
+                                disabled={deletingFolderId === folder.id}
+                                className="w-full rounded-lg px-3 py-2 text-left text-xs text-red-600 transition hover:bg-red-50 active:bg-red-100 disabled:opacity-50"
+                              >
+                                {deletingFolderId === folder.id
+                                  ? "Deleting..."
+                                  : "Delete"}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="py-12 text-center">
+                      <p className="text-sm text-zinc-500">
+                        {currentFolderId === rootId
+                          ? "No folders yet. Create your first folder to get started."
+                          : "This folder is empty."}
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
-            </section>
+                )}
+              </>
+            )}
           </div>
         </div>
 
@@ -488,6 +645,11 @@ function DashboardShell() {
               key={item.label}
               onClick={() => {
                 setActiveNav(item.label);
+                if (item.label === "Trash") {
+                  refreshTrash();
+                } else if (item.label === "My Drive") {
+                  setCurrentFolderId(rootId);
+                }
               }}
               className={`flex flex-col items-center gap-1 rounded-lg px-3 py-2 transition active:scale-95 ${
                 activeNav === item.label
@@ -513,12 +675,27 @@ function DashboardShell() {
       <CreateFolderModal
         isOpen={isCreateFolderModalOpen}
         onClose={() => setIsCreateFolderModalOpen(false)}
+        defaultParentId={currentFolderId}
       />
+
+      {/* Delete Folder Modal */}
+      {folderToDelete && (
+        <DeleteFolderModal
+          isOpen={isDeleteModalOpen}
+          onClose={() => {
+            setIsDeleteModalOpen(false);
+            setFolderToDelete(null);
+          }}
+          onConfirm={handleDeleteFolder}
+          folderName={folderToDelete.name}
+          folderId={folderToDelete.id}
+        />
+      )}
     </div>
   );
 }
 
-export default function DashboardPage() {
+function DashboardPageContent() {
   return (
     <main className="h-screen overflow-hidden">
       <AuthGuard>
@@ -527,5 +704,17 @@ export default function DashboardPage() {
         </FolderProvider>
       </AuthGuard>
     </main>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={
+      <main className="flex h-screen items-center justify-center">
+        <p className="text-base text-zinc-600">Loading...</p>
+      </main>
+    }>
+      <DashboardPageContent />
+    </Suspense>
   );
 }

@@ -1,4 +1,5 @@
 import { getAdminDb } from "@/lib/firebaseAdmin";
+import { FieldValue } from "firebase-admin/firestore";
 
 export interface UserProfile {
   userId: string;
@@ -14,6 +15,7 @@ export interface FolderDoc {
   parentId: string;
   userId: string;
   createdAt: number;
+  deletedAt?: number; // Timestamp when folder was moved to trash
 }
 
 export interface FileDoc {
@@ -79,7 +81,7 @@ export async function createFolder(input: {
   }
 }
 
-export async function listFoldersForUser(userId: string): Promise<
+export async function listFoldersForUser(userId: string, includeDeleted = false): Promise<
   Array<{ id: string } & FolderDoc>
 > {
   try {
@@ -87,10 +89,12 @@ export async function listFoldersForUser(userId: string): Promise<
       .where("userId", "==", userId)
       .get();
 
-    const folders = snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...(doc.data() as FolderDoc),
-    }));
+    const folders = snapshot.docs
+      .map((doc) => ({
+        id: doc.id,
+        ...(doc.data() as FolderDoc),
+      }))
+      .filter((folder) => includeDeleted || !folder.deletedAt);
 
     // Sort in memory to avoid requiring a Firestore composite index
     return folders.sort((a, b) => a.createdAt - b.createdAt);
@@ -114,6 +118,66 @@ export async function listFoldersForUser(userId: string): Promise<
   }
 }
 
+export async function listTrashFolders(userId: string): Promise<
+  Array<{ id: string } & FolderDoc>
+> {
+  try {
+    const snapshot = await folderCollection()
+      .where("userId", "==", userId)
+      .get();
+
+    const folders = snapshot.docs
+      .map((doc) => ({
+        id: doc.id,
+        ...(doc.data() as FolderDoc),
+      }))
+      .filter((folder) => folder.deletedAt !== undefined);
+
+    // Sort by deletion date (most recently deleted first)
+    return folders.sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0));
+  } catch (error: unknown) {
+    const errorMessage =
+      error instanceof Error ? error.message : String(error);
+    const errorCode = (error as { code?: number })?.code;
+
+    if (
+      errorCode === 5 ||
+      errorMessage.includes("NOT_FOUND") ||
+      errorMessage.includes("not found")
+    ) {
+      return [];
+    }
+
+    throw error;
+  }
+}
+
+export async function getFolderChildrenCount(folderId: string, userId: string): Promise<{ folders: number; files: number }> {
+  // Count non-deleted subfolders
+  const foldersSnapshot = await folderCollection()
+    .where("parentId", "==", folderId)
+    .where("userId", "==", userId)
+    .get();
+
+  const activeFolders = foldersSnapshot.docs.filter(
+    (doc) => !(doc.data() as FolderDoc).deletedAt
+  );
+
+  // Count non-deleted files
+  const filesSnapshot = await fileCollection()
+    .where("folderId", "==", folderId)
+    .where("userId", "==", userId)
+    .get();
+
+  // Files don't have deletedAt yet, but we'll count all for now
+  const activeFiles = filesSnapshot.docs.length;
+
+  return {
+    folders: activeFolders.length,
+    files: activeFiles,
+  };
+}
+
 export async function deleteFolder(folderId: string, userId: string): Promise<void> {
   const folder = await getFolderById(folderId);
   if (!folder) {
@@ -123,17 +187,86 @@ export async function deleteFolder(folderId: string, userId: string): Promise<vo
     throw new Error("Unauthorized to delete this folder.");
   }
 
-  // Check if folder has children
-  const childrenSnapshot = await folderCollection()
-    .where("parentId", "==", folderId)
-    .limit(1)
-    .get();
+  // Soft delete: set deletedAt timestamp instead of actually deleting
+  // Note: This will delete the folder even if it has children
+  await folderCollection().doc(folderId).update({
+    deletedAt: Date.now(),
+  });
+}
 
-  if (!childrenSnapshot.empty) {
-    throw new Error("Cannot delete folder with subfolders. Please delete subfolders first.");
+export async function restoreFolder(folderId: string, userId: string): Promise<void> {
+  const folder = await getFolderById(folderId);
+  if (!folder) {
+    throw new Error("Folder not found.");
+  }
+  if (folder.userId !== userId) {
+    throw new Error("Unauthorized to restore this folder.");
+  }
+  if (!folder.deletedAt) {
+    throw new Error("Folder is not in trash.");
   }
 
+  // Check if parent folder still exists and is not deleted
+  if (folder.parentId !== "root") {
+    const parent = await getFolderById(folder.parentId);
+    if (!parent || parent.deletedAt) {
+      throw new Error("Parent folder no longer exists. Cannot restore.");
+    }
+  }
+
+  // Remove deletedAt to restore
+  await folderCollection().doc(folderId).update({
+    deletedAt: FieldValue.delete(),
+  });
+}
+
+export async function permanentDeleteFolder(folderId: string, userId: string): Promise<void> {
+  const folder = await getFolderById(folderId);
+  if (!folder) {
+    throw new Error("Folder not found.");
+  }
+  if (folder.userId !== userId) {
+    throw new Error("Unauthorized to permanently delete this folder.");
+  }
+  if (!folder.deletedAt) {
+    throw new Error("Folder is not in trash.");
+  }
+
+  // Check if 30 days have passed
+  const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  if (folder.deletedAt > thirtyDaysAgo) {
+    throw new Error("Folder can only be permanently deleted after 30 days in trash.");
+  }
+
+  // Permanently delete the folder
   await folderCollection().doc(folderId).delete();
+}
+
+export async function cleanupOldTrash(userId: string): Promise<number> {
+  try {
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const snapshot = await folderCollection()
+      .where("userId", "==", userId)
+      .where("deletedAt", "<=", thirtyDaysAgo)
+      .get();
+
+    const batch = getAdminDb().batch();
+    let count = 0;
+
+    snapshot.docs.forEach((doc) => {
+      batch.delete(doc.ref);
+      count++;
+    });
+
+    if (count > 0) {
+      await batch.commit();
+    }
+
+    return count;
+  } catch (error) {
+    console.error("Error cleaning up old trash:", error);
+    return 0;
+  }
 }
 
 export async function createFileDoc(input: {
