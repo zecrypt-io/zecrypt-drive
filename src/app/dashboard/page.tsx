@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, Suspense } from "react";
+import { useState, useEffect, useRef, useMemo, Suspense } from "react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AuthGuard } from "@/components/auth/auth-guard";
@@ -49,6 +49,7 @@ function DashboardShell() {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [folderToDelete, setFolderToDelete] = useState<{ id: string; name: string } | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [searchQuery, setSearchQuery] = useState("");
   const isInitialLoad = useRef(true);
   const lastUrlFolderId = useRef<string | null>(null);
 
@@ -113,12 +114,58 @@ function DashboardShell() {
   const isTrash = activeNav === "Trash";
   const isStarredView = activeNav === "Starred";
   const displayedFolders = isStarredView ? starredFolders : currentFolders;
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+  const hasSearchQuery = normalizedSearch.length > 0;
+
+  const allVisibleFolders = useMemo(
+    () =>
+      Object.values(folders)
+        .filter(
+          (folder) =>
+            folder.id !== rootId &&
+            !folder.deletedAt &&
+            folder.parentId !== null, // exclude root placeholder
+        )
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [folders],
+  );
+
+  const filteredTrashFolders = hasSearchQuery
+    ? trashFolders.filter((folder) =>
+        folder.name.toLowerCase().includes(normalizedSearch),
+      )
+    : trashFolders;
+
+  const searchResults = useMemo(() => {
+    if (!hasSearchQuery) return [];
+    const baseCollection = isTrash
+      ? filteredTrashFolders
+      : isStarredView
+        ? starredFolders
+        : allVisibleFolders;
+    return baseCollection.filter((folder) =>
+      folder.name.toLowerCase().includes(normalizedSearch),
+    );
+  }, [
+    hasSearchQuery,
+    normalizedSearch,
+    isTrash,
+    isStarredView,
+    filteredTrashFolders,
+    starredFolders,
+    allVisibleFolders,
+  ]);
+
+  const shouldShowSearchResults = hasSearchQuery && !isTrash;
+  const foldersToRender = shouldShowSearchResults ? searchResults : displayedFolders;
   const showBreadcrumbs = isMyDrive && currentFolderId !== rootId;
-  const emptyMessage = isStarredView
-    ? "No starred folders yet."
-    : currentFolderId === rootId
-      ? "No folders yet. Create your first folder to get started."
-      : "This folder is empty.";
+  const emptyMessage = shouldShowSearchResults
+    ? `No folders match “${searchQuery}”.`
+    : isStarredView
+      ? "No starred folders yet."
+      : currentFolderId === rootId
+        ? "No folders yet. Create your first folder to get started."
+        : "This folder is empty.";
 
   const handleFolderClick = (folderId: string) => {
     if (!isMyDrive) {
@@ -311,8 +358,19 @@ function DashboardShell() {
             <input
               type="search"
               placeholder="Search in Drive"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
               className="flex-1 bg-transparent text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none"
             />
+            {hasSearchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-zinc-500 transition hover:text-zinc-700"
+              >
+                Clear
+              </button>
+            )}
           </div>
 
           {/* Right Actions - Hidden on mobile */}
@@ -435,8 +493,8 @@ function DashboardShell() {
                   </p>
                 </div>
                 <div className="divide-y divide-zinc-100">
-                  {trashFolders.length > 0 ? (
-                    trashFolders.map((folder) => {
+                  {filteredTrashFolders.length > 0 ? (
+                    filteredTrashFolders.map((folder) => {
                       const daysSinceDeletion = folder.deletedAt
                         ? Math.floor((Date.now() - folder.deletedAt) / (1000 * 60 * 60 * 24))
                         : 0;
@@ -512,7 +570,9 @@ function DashboardShell() {
                     })
                   ) : (
                     <div className="py-12 text-center">
-                      <p className="text-sm text-zinc-500">Trash is empty</p>
+                      <p className="text-sm text-zinc-500">
+                        {hasSearchQuery ? `No folders match “${searchQuery}”.` : "Trash is empty"}
+                      </p>
                     </div>
                   )}
                 </div>
@@ -534,8 +594,8 @@ function DashboardShell() {
               /* Grid View */
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                 {/* Folders */}
-                {displayedFolders.length > 0 ? (
-                  displayedFolders.map((folder) => (
+                {foldersToRender.length > 0 ? (
+                  foldersToRender.map((folder) => (
                     <button
                       key={folder.id}
                       onClick={() => handleFolderClick(folder.id)}
@@ -608,8 +668,8 @@ function DashboardShell() {
               <div className="rounded-xl border border-zinc-200 bg-white shadow-sm">
                 <div className="divide-y divide-zinc-100">
                   {/* Folders */}
-                  {displayedFolders.length > 0 ? (
-                    displayedFolders.map((folder) => (
+                  {foldersToRender.length > 0 ? (
+                    foldersToRender.map((folder) => (
                       <button
                         key={folder.id}
                         onClick={() => handleFolderClick(folder.id)}
