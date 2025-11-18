@@ -9,6 +9,7 @@ import {
   restoreFolder,
   permanentDeleteFolder,
   getFolderChildrenCount,
+  setFolderStarred,
 } from "@/lib/db";
 
 const ROOT_ID = "root";
@@ -160,6 +161,17 @@ export async function PATCH(request: Request) {
       await restoreFolder(folderId, userId);
       return NextResponse.json({ success: true }, { status: 200 });
     }
+
+  if (action === "star") {
+    if (typeof body.isStarred !== "boolean") {
+      return NextResponse.json(
+        { error: "isStarred boolean is required." },
+        { status: 400 },
+      );
+    }
+    await setFolderStarred(folderId, userId, body.isStarred);
+    return NextResponse.json({ success: true }, { status: 200 });
+  }
 
     return NextResponse.json(
       { error: "Invalid action." },

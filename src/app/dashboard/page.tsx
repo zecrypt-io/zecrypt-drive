@@ -19,7 +19,19 @@ const navItems = [
 ];
 
 function DashboardShell() {
-  const { rootId, getChildren, loading, deleteFolder, restoreFolder, permanentDeleteFolder, folders, trashFolders, refreshTrash } = useFolders();
+  const {
+    rootId,
+    getChildren,
+    loading,
+    deleteFolder,
+    restoreFolder,
+    permanentDeleteFolder,
+    folders,
+    trashFolders,
+    starredFolders,
+    refreshTrash,
+    toggleStarred,
+  } = useFolders();
   const { user } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -30,6 +42,7 @@ function DashboardShell() {
   const [restoringFolderId, setRestoringFolderId] = useState<string | null>(null);
   const [permanentlyDeletingFolderId, setPermanentlyDeletingFolderId] = useState<string | null>(null);
   const [deletingFolderId, setDeletingFolderId] = useState<string | null>(null);
+  const [starPendingId, setStarPendingId] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [isCreateFolderModalOpen, setIsCreateFolderModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -80,7 +93,8 @@ function DashboardShell() {
     let currentId: string | null = currentFolderId;
     
     while (currentId && currentId !== rootId) {
-      const folder = folders[currentId];
+      const folderId = currentId;
+      const folder = folders[folderId];
       if (folder) {
         breadcrumbs.unshift({ id: folder.id, name: folder.name });
         currentId = folder.parentId;
@@ -94,7 +108,21 @@ function DashboardShell() {
     return breadcrumbs;
   };
 
+  const isMyDrive = activeNav === "My Drive";
+  const isTrash = activeNav === "Trash";
+  const isStarredView = activeNav === "Starred";
+  const displayedFolders = isStarredView ? starredFolders : currentFolders;
+  const showBreadcrumbs = isMyDrive && currentFolderId !== rootId;
+  const emptyMessage = isStarredView
+    ? "No starred folders yet."
+    : currentFolderId === rootId
+      ? "No folders yet. Create your first folder to get started."
+      : "This folder is empty.";
+
   const handleFolderClick = (folderId: string) => {
+    if (!isMyDrive) {
+      setActiveNav("My Drive");
+    }
     setCurrentFolderId(folderId);
   };
 
@@ -135,6 +163,17 @@ function DashboardShell() {
       alert(error instanceof Error ? error.message : "Failed to delete folder");
     } finally {
       setDeletingFolderId(null);
+    }
+  };
+
+  const handleToggleStar = async (folderId: string, nextState: boolean) => {
+    setStarPendingId(folderId);
+    try {
+      await toggleStarred(folderId, nextState);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Failed to update star status");
+    } finally {
+      setStarPendingId(null);
     }
   };
 
@@ -316,7 +355,7 @@ function DashboardShell() {
         <div className="flex-1 overflow-y-auto bg-zinc-50 pb-20 lg:pb-6">
           <div className="mx-auto w-full max-w-7xl p-4 lg:p-6">
             {/* Breadcrumbs */}
-            {currentFolderId !== rootId && (
+            {showBreadcrumbs && (
               <div className="mb-4 flex items-center gap-2 overflow-x-auto">
                 {getBreadcrumbs().map((crumb, index) => (
                   <div key={crumb.id} className="flex items-center gap-2 shrink-0">
@@ -349,15 +388,17 @@ function DashboardShell() {
               </h2>
               
               {/* Actions - New Folder Button and View Mode Toggle */}
-              {activeNav !== "Trash" && (
+              {!isTrash && (
                 <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => setIsCreateFolderModalOpen(true)}
-                    className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-700 active:scale-[0.98]"
-                  >
-                    <span className="text-lg">+</span>
-                    <span>New Folder</span>
-                  </button>
+                  {isMyDrive && (
+                    <button
+                      onClick={() => setIsCreateFolderModalOpen(true)}
+                      className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-700 active:scale-[0.98]"
+                    >
+                      <span className="text-lg">+</span>
+                      <span>New Folder</span>
+                    </button>
+                  )}
                   <div className="flex items-center gap-1 rounded-lg border border-zinc-200 bg-white p-1">
                     <button
                       onClick={() => setViewMode("grid")}
@@ -492,81 +533,39 @@ function DashboardShell() {
               /* Grid View */
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                 {/* Folders */}
-                {currentFolders.length > 0 ? (
-                  currentFolders.map((folder) => (
+                {displayedFolders.length > 0 ? (
+                  displayedFolders.map((folder) => (
                     <button
                       key={folder.id}
                       onClick={() => handleFolderClick(folder.id)}
                       className="group relative flex flex-col items-center gap-2 rounded-xl border border-zinc-200 bg-white p-4 transition active:scale-[0.98] active:border-emerald-300 active:bg-emerald-50/50 hover:border-emerald-300 hover:bg-emerald-50/30"
                     >
+                      {!isTrash && (
+                        <button
+                          type="button"
+                          aria-pressed={folder.isStarred ? "true" : "false"}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleToggleStar(folder.id, !folder.isStarred);
+                          }}
+                          disabled={starPendingId === folder.id}
+                          className={`absolute left-2 top-2 rounded-full p-1 text-sm transition ${
+                            folder.isStarred
+                              ? "text-amber-500"
+                              : "text-zinc-400 hover:text-amber-500"
+                          } ${starPendingId === folder.id ? "opacity-50" : ""}`}
+                        >
+                          {folder.isStarred ? "★" : "☆"}
+                        </button>
+                      )}
                       <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
                         <span className="text-3xl">📁</span>
                       </div>
                       <p className="w-full truncate text-center text-xs font-medium text-zinc-900">
                         {folder.name}
                       </p>
-                      <div className="absolute right-2 top-2" onClick={(e) => e.stopPropagation()}>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setShowDeleteConfirm(
-                              showDeleteConfirm === folder.id ? null : folder.id,
-                            );
-                          }}
-                          className="rounded-lg p-1.5 text-zinc-400 opacity-0 transition hover:bg-zinc-100 group-hover:opacity-100 active:opacity-100"
-                          disabled={deletingFolderId === folder.id}
-                        >
-                          <span className="text-sm">⋯</span>
-                        </button>
-                        {showDeleteConfirm === folder.id && (
-                          <div className="absolute right-0 top-full z-10 mt-1 w-32 rounded-lg border border-zinc-200 bg-white shadow-lg">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteClick(folder.id);
-                              }}
-                              disabled={deletingFolderId === folder.id}
-                              className="w-full rounded-lg px-3 py-2 text-left text-xs text-red-600 transition hover:bg-red-50 active:bg-red-100 disabled:opacity-50"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </button>
-                  ))
-                ) : (
-                  <div className="col-span-full py-12 text-center">
-                    <p className="text-sm text-zinc-500">
-                      {currentFolderId === rootId
-                        ? "No folders yet. Create your first folder to get started."
-                        : "This folder is empty."}
-                    </p>
-                  </div>
-                )}
-              </div>
-            ) : (
-              /* List View */
-              <div className="rounded-xl border border-zinc-200 bg-white shadow-sm">
-                <div className="divide-y divide-zinc-100">
-                  {/* Folders */}
-                  {currentFolders.length > 0 ? (
-                    currentFolders.map((folder) => (
-                      <button
-                        key={folder.id}
-                        onClick={() => handleFolderClick(folder.id)}
-                        className="group relative flex w-full items-center gap-4 p-4 text-left transition hover:bg-zinc-50 active:bg-emerald-50/30"
-                      >
-                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
-                          <span className="text-2xl">📁</span>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="truncate text-sm font-medium text-zinc-900">
-                            {folder.name}
-                          </p>
-                          <p className="text-xs text-zinc-500">Updated just now</p>
-                        </div>
-                        <div className="relative">
+                      {!isTrash && (
+                        <div className="absolute right-2 top-2" onClick={(e) => e.stopPropagation()}>
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -574,10 +573,10 @@ function DashboardShell() {
                                 showDeleteConfirm === folder.id ? null : folder.id,
                               );
                             }}
-                            className="rounded-lg p-2 text-zinc-400 opacity-0 transition hover:bg-zinc-100 group-hover:opacity-100 active:opacity-100"
+                            className="rounded-lg p-1.5 text-zinc-400 opacity-0 transition hover:bg-zinc-100 group-hover:opacity-100 active:opacity-100"
                             disabled={deletingFolderId === folder.id}
                           >
-                            <span className="text-lg">⋯</span>
+                            <span className="text-sm">⋯</span>
                           </button>
                           {showDeleteConfirm === folder.id && (
                             <div className="absolute right-0 top-full z-10 mt-1 w-32 rounded-lg border border-zinc-200 bg-white shadow-lg">
@@ -594,15 +593,89 @@ function DashboardShell() {
                             </div>
                           )}
                         </div>
+                      )}
+                    </button>
+                  ))
+                ) : (
+                  <div className="col-span-full py-12 text-center">
+                    <p className="text-sm text-zinc-500">{emptyMessage}</p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* List View */
+              <div className="rounded-xl border border-zinc-200 bg-white shadow-sm">
+                <div className="divide-y divide-zinc-100">
+                  {/* Folders */}
+                  {displayedFolders.length > 0 ? (
+                    displayedFolders.map((folder) => (
+                      <button
+                        key={folder.id}
+                        onClick={() => handleFolderClick(folder.id)}
+                        className="group relative flex w-full items-center gap-4 p-4 text-left transition hover:bg-zinc-50 active:bg-emerald-50/30"
+                      >
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
+                          <span className="text-2xl">📁</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="truncate text-sm font-medium text-zinc-900">
+                            {folder.name}
+                          </p>
+                          <p className="text-xs text-zinc-500">Updated just now</p>
+                        </div>
+                        {!isTrash && (
+                          <div className="ml-auto flex items-center gap-1">
+                            <button
+                              type="button"
+                              aria-pressed={folder.isStarred ? "true" : "false"}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void handleToggleStar(folder.id, !folder.isStarred);
+                              }}
+                              disabled={starPendingId === folder.id}
+                              className={`rounded-full p-1 text-sm transition ${
+                                folder.isStarred
+                                  ? "text-amber-500"
+                                  : "text-zinc-400 hover:text-amber-500"
+                              } ${starPendingId === folder.id ? "opacity-50" : ""}`}
+                            >
+                              {folder.isStarred ? "★" : "☆"}
+                            </button>
+                            <div className="relative">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setShowDeleteConfirm(
+                                    showDeleteConfirm === folder.id ? null : folder.id,
+                                  );
+                                }}
+                                className="rounded-lg p-2 text-zinc-400 opacity-0 transition hover:bg-zinc-100 group-hover:opacity-100 active:opacity-100"
+                                disabled={deletingFolderId === folder.id}
+                              >
+                                <span className="text-lg">⋯</span>
+                              </button>
+                              {showDeleteConfirm === folder.id && (
+                                <div className="absolute right-0 top-full z-10 mt-1 w-32 rounded-lg border border-zinc-200 bg-white shadow-lg">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteClick(folder.id);
+                                    }}
+                                    disabled={deletingFolderId === folder.id}
+                                    className="w-full rounded-lg px-3 py-2 text-left text-xs text-red-600 transition hover:bg-red-50 active:bg-red-100 disabled:opacity-50"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </button>
                     ))
                   ) : (
                     <div className="py-12 text-center">
-                      <p className="text-sm text-zinc-500">
-                        {currentFolderId === rootId
-                          ? "No folders yet. Create your first folder to get started."
-                          : "This folder is empty."}
-                      </p>
+                      <p className="text-sm text-zinc-500">{emptyMessage}</p>
                     </div>
                   )}
                 </div>

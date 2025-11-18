@@ -16,6 +16,7 @@ export interface FolderDoc {
   userId: string;
   createdAt: number;
   deletedAt?: number; // Timestamp when folder was moved to trash
+  isStarred?: boolean;
 }
 
 export interface FileDoc {
@@ -54,6 +55,7 @@ export async function createFolder(input: {
       parentId: input.parentId,
       userId: input.userId,
       createdAt: Date.now(),
+      isStarred: false,
     };
     const ref = await folderCollection().add(doc);
     return { id: ref.id, ...doc };
@@ -191,6 +193,23 @@ export async function deleteFolder(folderId: string, userId: string): Promise<vo
   // Note: This will delete the folder even if it has children
   await folderCollection().doc(folderId).update({
     deletedAt: Date.now(),
+  });
+}
+
+export async function setFolderStarred(folderId: string, userId: string, isStarred: boolean): Promise<void> {
+  const folder = await getFolderById(folderId);
+  if (!folder) {
+    throw new Error("Folder not found.");
+  }
+  if (folder.userId !== userId) {
+    throw new Error("Unauthorized to update this folder.");
+  }
+  if (folder.deletedAt) {
+    throw new Error("Cannot star a folder in trash.");
+  }
+
+  await folderCollection().doc(folderId).update({
+    isStarred,
   });
 }
 

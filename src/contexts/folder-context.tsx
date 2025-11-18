@@ -18,11 +18,13 @@ export type Folder = {
   createdAt: number;
   userId?: string;
   deletedAt?: number;
+  isStarred?: boolean;
 };
 
 type FolderContextValue = {
   folders: Record<string, Folder>;
   trashFolders: Folder[];
+  starredFolders: Folder[];
   rootId: string;
   loading: boolean;
   error: string | null;
@@ -32,6 +34,7 @@ type FolderContextValue = {
   deleteFolder: (folderId: string) => Promise<void>;
   restoreFolder: (folderId: string) => Promise<void>;
   permanentDeleteFolder: (folderId: string) => Promise<void>;
+  toggleStarred: (folderId: string, isStarred: boolean) => Promise<void>;
   getChildren: (parentId: string) => Folder[];
 };
 
@@ -42,6 +45,7 @@ const rootFolder: Folder = {
   name: "My Drive",
   parentId: null,
   createdAt: 0,
+  isStarred: false,
 };
 
 const FolderContext = createContext<FolderContextValue | undefined>(undefined);
@@ -288,10 +292,57 @@ export function FolderProvider({ children }: PropsWithChildren) {
     [folders],
   );
 
+  const starredFolders = useMemo(
+    () =>
+      Object.values(folders)
+        .filter(
+          (folder) =>
+            folder.isStarred &&
+            !folder.deletedAt &&
+            folder.id !== rootFolderId,
+        )
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [folders],
+  );
+
+  const toggleStarred = useCallback(
+    async (folderId: string, isStarred: boolean) => {
+      const folder = folders[folderId];
+      if (!folder) {
+        throw new Error("Folder not found.");
+      }
+      if (!user) {
+        throw new Error("You must be signed in.");
+      }
+
+      const token = await user.getIdToken();
+      const response = await fetch("/api/folders", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ folderId, action: "star", isStarred }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error ?? "Unable to update favorite.");
+      }
+
+      setFolders((prev) => ({
+        ...prev,
+        [folderId]: { ...prev[folderId], isStarred },
+      }));
+    },
+    [folders, user],
+  );
+
   const value = useMemo(
     () => ({
       folders,
       trashFolders,
+      starredFolders,
       rootId: rootFolderId,
       loading,
       error,
@@ -301,11 +352,13 @@ export function FolderProvider({ children }: PropsWithChildren) {
       deleteFolder,
       restoreFolder,
       permanentDeleteFolder,
+      toggleStarred,
       getChildren,
     }),
     [
       folders,
       trashFolders,
+      starredFolders,
       loading,
       error,
       refresh,
@@ -314,6 +367,7 @@ export function FolderProvider({ children }: PropsWithChildren) {
       deleteFolder,
       restoreFolder,
       permanentDeleteFolder,
+      toggleStarred,
       getChildren,
     ],
   );
