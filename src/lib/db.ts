@@ -368,4 +368,14 @@ export async function deleteFileDoc(userId: string, fileId: string): Promise<voi
   await ref.delete();
 }
 
+export async function getTotalFileSizeForUser(userId: string) {
+  const snapshot = await fileCollection().where("userId", "==", userId).select("size").get();
+  let totalBytes = 0;
+  snapshot.docs.forEach((doc) => {
+    const data = doc.data() as Pick<FileDoc, "size">;
+    totalBytes += data.size || 0;
+  });
+  return { totalBytes, fileCount: snapshot.size };
+}
+
 

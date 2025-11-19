@@ -1,17 +1,19 @@
 "use client";
 
-import { 
-  HardDrive, 
-  Clock, 
-  Star, 
-  Trash2, 
-  Plus, 
+import {
+  HardDrive,
+  Clock,
+  Star,
+  Trash2,
+  Plus,
   Cloud,
-  X
+  X,
 } from "lucide-react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useFolders } from "@/contexts/folder-context";
 import { AuthButtons } from "@/components/auth/auth-buttons";
 import { FolderTree } from "@/components/folders/folder-tree";
+import { useAuth } from "@/contexts/auth-context";
 
 type NavItem = {
   label: string;
@@ -24,6 +26,8 @@ const navItems: NavItem[] = [
   { label: "Starred", icon: Star },
   { label: "Trash", icon: Trash2 },
 ];
+
+const STORAGE_LIMIT_BYTES = 50 * 1024 * 1024 * 1024; // 50 GB
 
 interface SidebarProps {
   isOpen: boolean;
@@ -41,6 +45,61 @@ export function Sidebar({
   onNewFolder
 }: SidebarProps) {
   const { rootId, setCurrentFolderId, refreshTrash } = useFolders();
+  const { user } = useAuth();
+  const [storageUsage, setStorageUsage] = useState<{
+    totalBytes: number;
+    fileCount: number;
+    loading: boolean;
+  }>({ totalBytes: 0, fileCount: 0, loading: false });
+
+  const formatGigabytes = useCallback((bytes: number) => {
+    return (bytes / (1024 * 1024 * 1024)).toFixed(1);
+  }, []);
+
+  const fetchStorageUsage = useCallback(async () => {
+    if (!user) {
+      setStorageUsage({ totalBytes: 0, fileCount: 0, loading: false });
+      return;
+    }
+    setStorageUsage((prev) => ({ ...prev, loading: true }));
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch("/api/files?summary=true", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (!response.ok) {
+        throw new Error("Failed to fetch usage");
+      }
+      const data = await response.json();
+      setStorageUsage({
+        totalBytes: data.totalBytes ?? 0,
+        fileCount: data.fileCount ?? 0,
+        loading: false,
+      });
+    } catch (error) {
+      console.error("Storage usage error:", error);
+      setStorageUsage((prev) => ({ ...prev, loading: false }));
+    }
+  }, [user]);
+
+  useEffect(() => {
+    void fetchStorageUsage();
+    const interval = setInterval(() => {
+      void fetchStorageUsage();
+    }, 30_000);
+    return () => clearInterval(interval);
+  }, [fetchStorageUsage]);
+
+  const usagePercent = useMemo(() => {
+    if (!STORAGE_LIMIT_BYTES) return 0;
+    return Math.min(storageUsage.totalBytes / STORAGE_LIMIT_BYTES, 1);
+  }, [storageUsage.totalBytes]);
+
+  const usageLabel = useMemo(() => {
+    return `${formatGigabytes(storageUsage.totalBytes)} GB of 50 GB`;
+  }, [storageUsage.totalBytes, formatGigabytes]);
 
   const handleNavClick = (label: string) => {
     onNavChange(label);
@@ -135,14 +194,25 @@ export function Sidebar({
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs text-zinc-600">
               <span>Storage</span>
-              <span className="font-medium">12 GB of 30 GB</span>
+              <span className="font-medium">
+                {storageUsage.loading ? "Calculating…" : usageLabel}
+              </span>
             </div>
             <div className="h-1 w-full overflow-hidden rounded-full bg-zinc-200">
-              <div className="h-full w-[40%] rounded-full bg-emerald-500" />
+              <div
+                className="h-full rounded-full bg-emerald-500 transition-all"
+                style={{ width: `${usagePercent * 100}%` }}
+              />
             </div>
-            <button className="text-xs text-emerald-600 hover:underline">
-              Buy storage
-            </button>
+            <div className="flex items-center justify-between text-[11px] text-zinc-500">
+              <span>{storageUsage.fileCount} files</span>
+              <button
+                onClick={() => void fetchStorageUsage()}
+                className="text-xs text-emerald-600 hover:underline"
+              >
+                Refresh
+              </button>
+            </div>
           </div>
           <AuthButtons />
         </div>

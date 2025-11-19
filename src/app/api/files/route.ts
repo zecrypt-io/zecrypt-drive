@@ -7,6 +7,7 @@ import {
   listFilesInFolder,
   getFileById,
   deleteFileDoc,
+  getTotalFileSizeForUser,
 } from "@/lib/db";
 import { uploadToSpaces, getSpacesSignedUrl, deleteFromSpaces } from "@/lib/spaces";
 
@@ -30,6 +31,12 @@ export async function GET(request: Request) {
   try {
     const userId = await authenticate(request);
     const { searchParams } = new URL(request.url);
+    const summary = searchParams.get("summary") === "true";
+    if (summary) {
+      const usage = await getTotalFileSizeForUser(userId);
+      return NextResponse.json(usage);
+    }
+
     const folderId = searchParams.get("folderId") || ROOT_ID;
 
     if (folderId !== ROOT_ID) {
