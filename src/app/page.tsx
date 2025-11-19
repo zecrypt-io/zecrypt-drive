@@ -1,168 +1,188 @@
 import Link from "next/link";
-
-const highlights = [
-  {
-    title: "Zero-knowledge security",
-    description:
-      "End-to-end AES-256 + WebCrypto. Keys never touch our servers.",
-    accent: "from-emerald-500/20 via-emerald-500/5 to-transparent",
-  },
-  {
-    title: "Instant file search",
-    description:
-      "Browse gigabytes of encrypted files with blazing-fast lookups.",
-    accent: "from-sky-500/20 via-sky-500/5 to-transparent",
-  },
-  {
-    title: "Mobile-first UX",
-    description:
-      "Feels like a native app on every screen, with haptics-ready UI.",
-    accent: "from-indigo-500/20 via-indigo-500/5 to-transparent",
-  },
-];
-
-const timeline = [
-  { label: "Upload", detail: "Drag & drop, chunked & resilient" },
-  { label: "Encrypt", detail: "Processed locally with WebCrypto" },
-  { label: "Store", detail: "DigitalOcean Spaces + Firestore metadata" },
-  { label: "Share", detail: "Link-based access with revocable keys" },
-];
+import { ArrowRight, Shield, Zap, Globe, Lock, Check, Cloud } from "lucide-react";
 
 export default function Home() {
   return (
-    <main className="relative overflow-hidden bg-[#05060a] text-white">
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(16,185,129,0.25),_transparent_50%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom,_rgba(59,130,246,0.2),_transparent_45%)]" />
-        <div className="animate-gradient absolute left-1/2 top-40 h-64 w-64 -translate-x-1/2 rounded-full bg-gradient-to-r from-emerald-500/40 via-cyan-400/30 to-indigo-500/30 blur-[120px]" />
-      </div>
-
-      <div className="relative mx-auto flex min-h-screen w-full flex-col gap-16 px-5 pb-16 pt-20 sm:px-8 lg:px-12 xl:px-16 2xl:px-20">
-        <header className="flex flex-col gap-8">
-          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs uppercase tracking-[0.3em] text-emerald-200">
-            ZeCrypt Drive
-            <span className="h-1 w-1 rounded-full bg-emerald-300" />
-            Zero-knowledge cloud
+    <main className="min-h-screen bg-white text-zinc-900 selection:bg-emerald-100 selection:text-emerald-900">
+      {/* Navigation */}
+      <nav className="sticky top-0 z-50 border-b border-zinc-100 bg-white/80 backdrop-blur-md">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-600 text-white">
+              <Cloud className="h-5 w-5" />
+            </div>
+            <span className="text-lg font-semibold tracking-tight">ZeCrypt</span>
           </div>
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start xl:grid-cols-[1.2fr_0.8fr]">
-            <div>
-              <h1 className="text-4xl font-semibold leading-tight sm:text-5xl lg:text-6xl xl:text-7xl lg:leading-[1.1]">
-                Secure every file, share every idea, trust every moment.
-          </h1>
-              <p className="mt-5 text-base text-white/70 sm:text-lg lg:text-xl lg:max-w-3xl">
-                ZeCrypt Drive is the zero-knowledge workspace for teams that
-                demand privacy by design. Encrypt on the client, collaborate
-                everywhere.
-              </p>
-              <div className="mt-8 flex flex-col gap-4 sm:flex-row">
-                <Link
-                  href="/login"
-                  className="group inline-flex items-center justify-center gap-3 rounded-full bg-white px-6 py-3 text-sm font-semibold text-black transition hover:translate-y-0.5 hover:bg-white/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-                >
-                  Launch Encrypted Drive
-                  <span className="transition group-hover:translate-x-1">
-                    →
-                  </span>
-                </Link>
-                <Link
-                  href="#features"
-                  className="inline-flex items-center justify-center gap-3 rounded-full border border-white/30 px-6 py-3 text-sm font-semibold text-white/90 transition hover:border-white/50 hover:bg-white/5"
-                >
-                  Watch the Story
-                  <span className="text-white/60">▶</span>
-                </Link>
-              </div>
-            </div>
-            <div className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-2xl shadow-emerald-500/10 backdrop-blur">
-              <p className="text-xs uppercase tracking-[0.35em] text-white/50">
-                Live Snapshot
-              </p>
-              <div className="mt-4 space-y-4 text-base font-medium text-white/90">
-                <div className="flex items-center justify-between">
-                  <span>Files protected</span>
-                  <span className="text-emerald-300">1,248,392</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Avg. decrypt time</span>
-                  <span className="text-emerald-300">142ms</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Realtime sessions</span>
-                  <span className="text-emerald-300">842</span>
-                </div>
-              </div>
-            </div>
-        </div>
-        </header>
-
-        <section
-          id="features"
-          className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 lg:gap-8"
-        >
-          {highlights.map((item) => (
-            <div
-              key={item.title}
-              className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-6 shadow-xl shadow-black/20 transition hover:-translate-y-1"
+          <div className="flex items-center gap-6">
+            <Link 
+              href="/login" 
+              className="text-sm font-medium text-zinc-600 transition hover:text-zinc-900"
             >
-              <div
-                className={`absolute inset-0 bg-gradient-to-br ${item.accent}`}
-              />
-              <div className="relative">
-                <h3 className="text-lg font-semibold">{item.title}</h3>
-                <p className="mt-3 text-sm text-white/70">{item.description}</p>
-              </div>
-            </div>
-          ))}
-        </section>
-
-        <section className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr] xl:gap-12">
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-            <p className="text-xs uppercase tracking-[0.4em] text-white/50">
-              Workflow
-            </p>
-            <h2 className="mt-3 text-2xl font-semibold">
-              Built for encrypted collaboration.
-            </h2>
-            <div className="mt-8 space-y-4">
-              {timeline.map((step, index) => (
-                <div
-                  key={step.label}
-                  className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/5 p-4"
-                >
-                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-sm font-semibold">
-                    {index + 1}
-                  </span>
-                  <div>
-                    <p className="font-medium">{step.label}</p>
-                    <p className="text-sm text-white/60">{step.detail}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
+              Sign In
+            </Link>
+            <Link
+              href="/login"
+              className="rounded-full bg-zinc-900 px-5 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 active:scale-95"
+            >
+              Get Started
+            </Link>
           </div>
-          <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-white/10 via-white/5 to-transparent p-6 text-white/90 backdrop-blur">
-            <p className="text-xs uppercase tracking-[0.4em] text-white/50">
-              Experience
-            </p>
-            <h3 className="mt-3 text-2xl font-semibold">
-              Designed for humans. Trusted by teams.
-            </h3>
-            <p className="mt-5 text-sm text-white/70">
-              “ZeCrypt feels like carrying a personal vault. Everything is fast,
-              delightful, and private by default.”
-            </p>
-            <div className="mt-8 flex flex-col gap-2 text-sm text-white/60">
-              <p>✔ 90% faster onboarding with guided encryption</p>
-              <p>✔ Inline previews without leaving your browser</p>
-              <p>✔ Offline-ready mobile experience</p>
-            </div>
-            <div className="mt-10 flex items-center gap-3 text-sm text-white/50">
-              <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.8)]" />
-              SOC2 & GDPR compliant infrastructure
-            </div>
-          </div>
-        </section>
         </div>
-      </main>
+      </nav>
+
+      {/* Hero Section */}
+      <section className="relative overflow-hidden pt-24 pb-32 lg:pt-32">
+        <div className="mx-auto max-w-6xl px-6 text-center">
+          <div className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1 text-xs font-medium text-zinc-600 mb-8 animate-fade-in-up">
+            <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+            Zero-knowledge encryption is now standard
+          </div>
+          
+          <h1 className="mx-auto max-w-4xl text-5xl font-bold tracking-tight text-zinc-900 sm:text-6xl lg:text-7xl mb-8">
+            Secure cloud storage for <br className="hidden sm:block" />
+            <span className="text-emerald-600">private</span> collaboration.
+          </h1>
+          
+          <p className="mx-auto max-w-2xl text-lg text-zinc-600 mb-10 leading-relaxed">
+            ZeCrypt ensures your files are encrypted before they leave your device. 
+            No one—not even us—can see your data. Experience privacy by design.
+          </p>
+
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+            <Link
+              href="/login"
+              className="group flex h-12 items-center gap-2 rounded-full bg-emerald-600 px-8 text-sm font-semibold text-white transition hover:bg-emerald-700 active:scale-95"
+            >
+              Start for free
+              <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
+            </Link>
+            <Link
+              href="#features"
+              className="flex h-12 items-center gap-2 rounded-full border border-zinc-200 px-8 text-sm font-semibold text-zinc-700 transition hover:border-zinc-300 hover:bg-zinc-50 active:scale-95"
+            >
+              How it works
+            </Link>
+          </div>
+
+          {/* Hero Image / Dashboard Preview */}
+          <div className="mt-20 relative mx-auto max-w-5xl rounded-2xl border border-zinc-200 bg-white p-2 shadow-2xl shadow-zinc-200/50">
+            <div className="aspect-[16/10] overflow-hidden rounded-xl bg-zinc-50 relative group">
+               <div className="absolute inset-0 flex items-center justify-center">
+                  <p className="text-zinc-400 font-medium">Dashboard Preview Interface</p>
+               </div>
+               {/* Abstract UI Elements representation */}
+               <div className="absolute top-4 left-4 right-4 h-8 bg-white rounded-lg shadow-sm opacity-50" />
+               <div className="absolute top-16 left-4 bottom-4 w-48 bg-white rounded-lg shadow-sm opacity-50 hidden sm:block" />
+               <div className="absolute top-16 left-4 sm:left-56 right-4 bottom-4 grid grid-cols-3 gap-4 p-4">
+                  {[1,2,3,4,5,6].map(i => (
+                    <div key={i} className="bg-white rounded-xl shadow-sm opacity-60" />
+                  ))}
+               </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Features Grid */}
+      <section id="features" className="bg-zinc-50 py-24 sm:py-32">
+        <div className="mx-auto max-w-6xl px-6">
+          <div className="mb-16 max-w-2xl">
+            <h2 className="text-3xl font-bold tracking-tight text-zinc-900 sm:text-4xl">
+              Privacy without compromise.
+            </h2>
+            <p className="mt-4 text-lg text-zinc-600">
+              We built ZeCrypt to prove that secure software doesn't have to be difficult to use.
+            </p>
+          </div>
+
+          <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
+            {[
+              {
+                icon: Shield,
+                title: "End-to-End Encrypted",
+                desc: "Client-side encryption (AES-256) means your files are locked before upload."
+              },
+              {
+                icon: Zap,
+                title: "Lightning Fast",
+                desc: "Optimized for speed. Encryption happens instantly in your browser."
+              },
+              {
+                icon: Globe,
+                title: "Access Anywhere",
+                desc: "Your private vault is accessible from any device, anywhere in the world."
+              },
+              {
+                icon: Lock,
+                title: "Zero Knowledge",
+                desc: "We don't hold your keys. Your password is the only way to decrypt your data."
+              },
+              {
+                icon: Check,
+                title: "Simple Sharing",
+                desc: "Securely share files with others using time-limited, encrypted links."
+              },
+              {
+                icon: Cloud,
+                title: "Automatic Backup",
+                desc: "Redundant storage ensures your data is safe from hardware failures."
+              }
+            ].map((feature, i) => (
+              <div 
+                key={i} 
+                className="group rounded-2xl bg-white p-8 shadow-sm transition-all hover:shadow-md hover:-translate-y-1"
+              >
+                <div className="mb-6 inline-flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 group-hover:bg-emerald-100 transition-colors">
+                  <feature.icon className="h-6 w-6" />
+                </div>
+                <h3 className="mb-3 text-lg font-semibold text-zinc-900">
+                  {feature.title}
+                </h3>
+                <p className="text-sm leading-relaxed text-zinc-500">
+                  {feature.desc}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* CTA Section */}
+      <section className="py-24">
+        <div className="mx-auto max-w-4xl px-6 text-center">
+          <h2 className="text-3xl font-bold tracking-tight text-zinc-900 sm:text-4xl mb-6">
+            Ready to secure your digital life?
+          </h2>
+          <p className="text-lg text-zinc-600 mb-10">
+            Join thousands of users who trust ZeCrypt with their most sensitive data.
+          </p>
+          <Link
+            href="/login"
+            className="inline-flex h-12 items-center gap-2 rounded-full bg-zinc-900 px-8 text-sm font-semibold text-white transition hover:bg-zinc-800 active:scale-95"
+          >
+            Create free account
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="border-t border-zinc-100 bg-white py-12">
+        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-6 px-6 sm:flex-row">
+          <div className="flex items-center gap-2 text-zinc-900">
+            <Cloud className="h-5 w-5 fill-current" />
+            <span className="font-bold">ZeCrypt</span>
+          </div>
+          <p className="text-sm text-zinc-500">
+            © {new Date().getFullYear()} ZeCrypt Drive. All rights reserved.
+          </p>
+          <div className="flex gap-6">
+            <Link href="#" className="text-sm text-zinc-500 hover:text-zinc-900">Privacy</Link>
+            <Link href="#" className="text-sm text-zinc-500 hover:text-zinc-900">Terms</Link>
+            <Link href="#" className="text-sm text-zinc-500 hover:text-zinc-900">Contact</Link>
+          </div>
+        </div>
+      </footer>
+    </main>
   );
 }
