@@ -49,7 +49,7 @@ export function getSpacesFileUrl(key: string) {
   return `${cdnEndpoint.replace(/\/$/, "")}/${key}`;
 }
 
-export async function getSpacesSignedUrl(key: string, expiresInSeconds = 300) {
+export async function getSpacesSignedUrl(key: string, expiresInSeconds = 60 * 60 * 3) {
   const command = new GetObjectCommand({
     Bucket: bucket,
     Key: key,

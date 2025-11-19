@@ -13,6 +13,7 @@ interface FileGridProps {
   onFileClick?: (file: DriveFile) => void;
   onFileDetails?: (file: DriveFile) => void;
   onFileDelete?: (file: DriveFile) => void;
+  onFileDownload?: (file: DriveFile) => void;
   onToggleStar: (id: string, isStarred: boolean) => void;
   onDelete: (folder: Folder) => void;
   getFileDisplayName?: (file: DriveFile) => string;
@@ -27,6 +28,7 @@ export function FileGrid({
   onFileClick,
   onFileDetails,
   onFileDelete,
+  onFileDownload,
   onToggleStar,
   onDelete,
   getFileDisplayName,
@@ -137,11 +139,18 @@ export function FileGrid({
           )}
         </div>
         ) : (
-          <button
+          <div
             key={item.file.id}
-            type="button"
-            onClick={() => onFileClick?.(item.file)}
             className="group flex flex-col rounded-xl border border-zinc-200 bg-white p-3 text-left transition-all hover:shadow-md active:scale-[0.98] hover:border-emerald-200"
+            role="button"
+            tabIndex={0}
+            onClick={() => onFileClick?.(item.file)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onFileClick?.(item.file);
+              }
+            }}
           >
             <div className="relative mb-3 h-28 w-full overflow-hidden rounded-lg bg-zinc-50">
               {item.file.contentType.startsWith("image/") ? (
@@ -213,6 +222,15 @@ export function FileGrid({
                     >
                       Show details
                     </button>
+                  <button
+                    onClick={() => {
+                      onFileDownload?.(item.file);
+                      setActiveMenu(null);
+                    }}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+                  >
+                    Download
+                  </button>
                     <div className="my-1 border-t border-zinc-100" />
                     <button
                       onClick={() => {
@@ -228,7 +246,7 @@ export function FileGrid({
                 )}
               </div>
             </div>
-          </button>
+          </div>
         )
       )}
     </div>

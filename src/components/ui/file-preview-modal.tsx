@@ -8,9 +8,10 @@ interface FilePreviewModalProps {
   isOpen: boolean;
   file: DriveFile | null;
   onClose: () => void;
+  onDownload?: (file: DriveFile) => void;
 }
 
-export function FilePreviewModal({ isOpen, file, onClose }: FilePreviewModalProps) {
+export function FilePreviewModal({ isOpen, file, onClose, onDownload }: FilePreviewModalProps) {
   if (!isOpen || !file) {
     return null;
   }
@@ -89,6 +90,12 @@ export function FilePreviewModal({ isOpen, file, onClose }: FilePreviewModalProp
             <p>Uploaded: {new Date(file.createdAt).toLocaleString()}</p>
           </div>
           <div className="flex gap-3">
+            <button
+              onClick={() => onDownload?.(file)}
+              className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100"
+            >
+              Download
+            </button>
             <a
               href={file.url}
               target="_blank"

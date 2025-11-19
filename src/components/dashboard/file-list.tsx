@@ -13,6 +13,7 @@ interface FileListProps {
   onFileClick?: (file: DriveFile) => void;
   onFileDetails?: (file: DriveFile) => void;
   onFileDelete?: (file: DriveFile) => void;
+  onFileDownload?: (file: DriveFile) => void;
   onToggleStar: (id: string, isStarred: boolean) => void;
   onDelete: (folder: Folder) => void;
   getFileDisplayName?: (file: DriveFile) => string;
@@ -29,6 +30,7 @@ export function FileList({
   onFileClick,
   onFileDetails,
   onFileDelete,
+  onFileDownload,
   onToggleStar,
   onDelete,
   getFileDisplayName,
@@ -239,6 +241,15 @@ export function FileList({
                           className="flex w-full items-center gap-2 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
                         >
                           Show details
+                        </button>
+                        <button
+                          onClick={() => {
+                            onFileDownload?.(item.file);
+                            setActiveMenu(null);
+                          }}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+                        >
+                          Download
                         </button>
                         <div className="my-1 border-t border-zinc-100" />
                         <button

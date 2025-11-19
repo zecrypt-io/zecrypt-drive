@@ -302,6 +302,38 @@ function DashboardShell() {
     }
   };
 
+  const handleDownloadFile = (file: DriveFile) => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    void (async () => {
+      try {
+        const response = await fetch(file.url, { credentials: "omit", mode: "cors" });
+        if (!response.ok) {
+          throw new Error("Failed to fetch download.");
+        }
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = getFileFullName(file);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      } catch (error) {
+        console.warn("Direct download failed, falling back to opening link.", error);
+        const fallbackLink = document.createElement("a");
+        fallbackLink.href = file.url;
+        fallbackLink.target = "_blank";
+        fallbackLink.rel = "noopener noreferrer";
+        document.body.appendChild(fallbackLink);
+        fallbackLink.click();
+        document.body.removeChild(fallbackLink);
+      }
+    })();
+  };
+
   const handleShowDetails = (file: DriveFile) => {
     setDetailsFile(file);
     setIsDetailsOpen(true);
@@ -637,6 +669,7 @@ function DashboardShell() {
                     onFileClick={handleFileClick}
                     onFileDetails={handleShowDetails}
                     onFileDelete={handleDeleteFile}
+                    onFileDownload={handleDownloadFile}
                     onToggleStar={(id, star) => toggleStarred(id, star)}
                     onDelete={handleDeleteClick}
                     getFileDisplayName={getFileDisplayName}
@@ -651,6 +684,7 @@ function DashboardShell() {
                     onFileClick={handleFileClick}
                     onFileDetails={handleShowDetails}
                     onFileDelete={handleDeleteFile}
+                    onFileDownload={handleDownloadFile}
                     onToggleStar={(id, star) => toggleStarred(id, star)}
                     onDelete={handleDeleteClick}
                     getFileDisplayName={getFileDisplayName}
@@ -795,6 +829,7 @@ function DashboardShell() {
         isOpen={isPreviewOpen && !!previewFile}
         file={previewFile}
         onClose={closePreview}
+        onDownload={handleDownloadFile}
       />
       <FileDetailsModal
         isOpen={isDetailsOpen && !!detailsFile}
