@@ -1,21 +1,33 @@
 "use client";
 
-import { Folder as FolderIcon, MoreVertical, Star } from "lucide-react";
+import Image from "next/image";
+import { Folder as FolderIcon, MoreVertical, Star, File as FileIcon } from "lucide-react";
 import type { Folder } from "@/contexts/folder-context";
-import { useState, useEffect, useRef } from "react";
+import type { DriveFile } from "@/types/files";
+import { useState, useEffect, useRef, useMemo } from "react";
 
 interface FileListProps {
   folders: Folder[];
+  files?: DriveFile[];
   onFolderClick: (id: string) => void;
+  onFileClick?: (file: DriveFile) => void;
   onToggleStar: (id: string, isStarred: boolean) => void;
   onDelete: (folder: Folder) => void;
+  getFileName?: (file: DriveFile) => string;
+  formatFileDate?: (timestamp: number) => string;
+  formatFileSize?: (bytes: number) => string;
 }
 
 export function FileList({ 
   folders, 
+  files = [],
   onFolderClick,
+  onFileClick,
   onToggleStar,
-  onDelete 
+  onDelete,
+  getFileName,
+  formatFileDate,
+  formatFileSize,
 }: FileListProps) {
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -36,7 +48,15 @@ export function FileList({
     };
   }, [activeMenu]);
 
-  if (folders.length === 0) {
+  const items = useMemo(
+    () => [
+      ...folders.map((folder) => ({ type: "folder" as const, folder })),
+      ...files.map((file) => ({ type: "file" as const, file })),
+    ],
+    [folders, files],
+  );
+
+  if (items.length === 0) {
     return null;
   }
 
@@ -61,10 +81,11 @@ export function FileList({
           </tr>
         </thead>
         <tbody className="divide-y divide-zinc-100">
-          {folders.map((folder) => (
+          {items.map((item) =>
+            item.type === "folder" ? (
             <tr
-              key={folder.id}
-              onClick={() => onFolderClick(folder.id)}
+              key={item.folder.id}
+              onClick={() => onFolderClick(item.folder.id)}
               className="group cursor-pointer transition-colors hover:bg-zinc-50"
             >
               <td className="px-4 py-3">
@@ -72,46 +93,46 @@ export function FileList({
                   <div className="flex items-center justify-center rounded bg-emerald-100 p-1.5 text-emerald-600">
                     <FolderIcon className="h-4 w-4 fill-emerald-600/20" />
                   </div>
-                  <span className="font-medium text-zinc-900">{folder.name}</span>
-                  {folder.isStarred && (
+                  <span className="font-medium text-zinc-900">{item.folder.name}</span>
+                  {item.folder.isStarred && (
                     <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
                   )}
                 </div>
               </td>
               <td className="px-4 py-3 text-zinc-600">Me</td>
-              <td className="px-4 py-3 text-zinc-600">{formatDate(folder.createdAt)}</td>
+              <td className="px-4 py-3 text-zinc-600">{formatDate(item.folder.createdAt)}</td>
               <td className="px-4 py-3 text-zinc-600">—</td>
               <td className="px-4 py-3">
                 <div className="relative" onClick={(e) => e.stopPropagation()}>
                   <button
-                    onClick={() => setActiveMenu(activeMenu === folder.id ? null : folder.id)}
+                    onClick={() => setActiveMenu(activeMenu === item.folder.id ? null : item.folder.id)}
                     className={`flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-zinc-200 hover:text-zinc-600 ${
-                      activeMenu === folder.id ? "bg-zinc-200 text-zinc-600" : "opacity-0 group-hover:opacity-100"
+                      activeMenu === item.folder.id ? "bg-zinc-200 text-zinc-600" : "opacity-0 group-hover:opacity-100"
                     }`}
                   >
                     <MoreVertical className="h-4 w-4" />
                   </button>
 
                   {/* Dropdown Menu */}
-                  {activeMenu === folder.id && (
+                  {activeMenu === item.folder.id && (
                     <div 
                       ref={menuRef}
                       className="absolute right-0 top-full z-10 mt-1 w-40 rounded-lg border border-zinc-100 bg-white shadow-lg py-1 animate-in fade-in zoom-in-95 duration-100"
                     >
                       <button
                         onClick={() => {
-                          onToggleStar(folder.id, !folder.isStarred);
+                          onToggleStar(item.folder.id, !item.folder.isStarred);
                           setActiveMenu(null);
                         }}
                         className="flex w-full items-center gap-2 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
                       >
-                        <Star className={`h-4 w-4 ${folder.isStarred ? "fill-amber-400 text-amber-400" : ""}`} />
-                        {folder.isStarred ? "Remove from Starred" : "Add to Starred"}
+                        <Star className={`h-4 w-4 ${item.folder.isStarred ? "fill-amber-400 text-amber-400" : ""}`} />
+                        {item.folder.isStarred ? "Remove from Starred" : "Add to Starred"}
                       </button>
                       <div className="my-1 border-t border-zinc-100" />
                       <button
                         onClick={() => {
-                          onDelete(folder);
+                          onDelete(item.folder);
                           setActiveMenu(null);
                         }}
                         className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
@@ -124,7 +145,56 @@ export function FileList({
                 </div>
               </td>
             </tr>
-          ))}
+            ) : (
+              <tr
+                key={item.file.id}
+                onClick={() => onFileClick?.(item.file)}
+                className="cursor-pointer transition-colors hover:bg-zinc-50"
+              >
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <div className="relative h-10 w-10 overflow-hidden rounded-md bg-zinc-100">
+                      {item.file.contentType.startsWith("image/") ? (
+                        <Image
+                          src={item.file.url}
+                          alt={getFileName ? getFileName(item.file) : item.file.nameCiphertext}
+                          fill
+                          className="object-cover"
+                          sizes="40px"
+                        />
+                      ) : item.file.contentType.startsWith("video/") ? (
+                        <video
+                          src={item.file.url}
+                          className="h-full w-full object-cover"
+                          muted
+                          loop
+                          playsInline
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-zinc-400">
+                          <FileIcon className="h-4 w-4" />
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <p className="font-medium text-zinc-900">
+                        {getFileName ? getFileName(item.file) : item.file.nameCiphertext}
+                      </p>
+                      <p className="text-xs text-zinc-500">File</p>
+                    </div>
+                  </div>
+                </td>
+                <td className="px-4 py-3 text-zinc-600">Me</td>
+                <td className="px-4 py-3 text-zinc-600">
+                  {formatFileDate ? formatFileDate(item.file.createdAt) : formatDate(item.file.createdAt)}
+                </td>
+                <td className="px-4 py-3 text-zinc-600">
+                  {formatFileSize ? formatFileSize(item.file.size) : `${item.file.size} B`}
+                </td>
+                <td />
+              </tr>
+            )
+          )}
         </tbody>
       </table>
     </div>

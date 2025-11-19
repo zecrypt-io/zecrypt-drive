@@ -44,7 +44,6 @@ function TreeNode({ folderId, depth }: { folderId: string; depth: number }) {
   
   if (!folder) return null;
 
-  const isRoot = depth === 0;
   const isActive = currentFolderId === folderId;
 
   return (

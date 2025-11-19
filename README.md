@@ -30,9 +30,17 @@ NEXT_PUBLIC_FIREBASE_APP_ID=
 FIREBASE_PROJECT_ID=
 FIREBASE_CLIENT_EMAIL=
 FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+DO_SPACES_KEY=
+DO_SPACES_SECRET=
+DO_SPACES_REGION=nyc3
+DO_SPACES_ENDPOINT=https://nyc3.digitaloceanspaces.com
+DO_SPACES_BUCKET=zecrypt-drive
+# Optional CDN/Custom Domain that fronts your Space (omit to use bucket URL)
+DO_SPACES_CDN_ENDPOINT=https://cdn.your-domain.com
 ```
 
 - Public keys configure the client SDK; the private key / client email powers the Admin SDK for token verification.
+- DigitalOcean Spaces credentials allow the API route to stream uploads to your bucket. The CDN endpoint is optional—fall back to the default bucket domain when omitted.
 
 ### Firestore Setup
 

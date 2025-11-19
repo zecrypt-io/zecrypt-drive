@@ -342,4 +342,30 @@ export async function listFilesForUser(userId: string, limit = 50) {
   }));
 }
 
+export async function listFilesInFolder(userId: string, folderId: string) {
+  const snapshot = await fileCollection()
+    .where("userId", "==", userId)
+    .where("folderId", "==", folderId)
+    .orderBy("createdAt", "desc")
+    .get();
+
+  return snapshot.docs.map((doc) => ({
+    id: doc.id,
+    ...(doc.data() as FileDoc),
+  }));
+}
+
+export async function deleteFileDoc(userId: string, fileId: string): Promise<void> {
+  const ref = fileCollection().doc(fileId);
+  const doc = await ref.get();
+  if (!doc.exists) {
+    throw new Error("File not found.");
+  }
+  const data = doc.data() as FileDoc;
+  if (data.userId !== userId) {
+    throw new Error("Unauthorized to delete this file.");
+  }
+  await ref.delete();
+}
+
 

@@ -235,8 +235,9 @@ export function FolderProvider({ children }: PropsWithChildren) {
       setFolders((prev) => {
         const updated = { ...prev };
         if (updated[folderId]) {
-          const { deletedAt, ...rest } = updated[folderId];
-          updated[folderId] = rest;
+          const refreshed = { ...updated[folderId] };
+          delete refreshed.deletedAt;
+          updated[folderId] = refreshed;
         }
         return updated;
       });

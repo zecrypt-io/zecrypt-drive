@@ -132,7 +132,8 @@ export function DeleteFolderModal({
         <div className="p-6 space-y-4">
           <div>
             <p className="text-sm text-zinc-700">
-              Are you sure you want to delete <span className="font-semibold text-zinc-900">"{folderName}"</span>?
+              Are you sure you want to delete{" "}
+              <span className="font-semibold text-zinc-900">{folderName}</span>?
             </p>
           </div>
 

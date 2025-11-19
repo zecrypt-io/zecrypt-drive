@@ -1,7 +1,15 @@
 "use client";
 
 import Image from "next/image";
-import { useState, useEffect, useRef, useMemo, Suspense } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  Suspense,
+  useCallback,
+  type ChangeEvent,
+} from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { FolderProvider, useFolders } from "@/contexts/folder-context";
@@ -12,7 +20,11 @@ import { Sidebar } from "@/components/dashboard/sidebar";
 import { Header } from "@/components/dashboard/header";
 import { FileGrid } from "@/components/dashboard/file-grid";
 import { FileList } from "@/components/dashboard/file-list";
-import { LayoutGrid, List as ListIcon, Folder as FolderIcon, Clock, Star, Trash2, ChevronRight } from "lucide-react";
+import { ConfirmModal } from "@/components/ui/confirm-modal";
+import { FilePreviewModal } from "@/components/ui/file-preview-modal";
+import { LayoutGrid, List as ListIcon, Folder as FolderIcon, Star, Trash2, ChevronRight } from "lucide-react";
+import { useAuth } from "@/contexts/auth-context";
+import type { DriveFile } from "@/types/files";
 
 function DashboardShell() {
   const {
@@ -28,6 +40,7 @@ function DashboardShell() {
     refreshTrash,
     toggleStarred,
   } = useFolders();
+  const { user } = useAuth();
   
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -40,10 +53,20 @@ function DashboardShell() {
   const [isCreateFolderModalOpen, setIsCreateFolderModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [folderToDelete, setFolderToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [folderToDeleteForever, setFolderToDeleteForever] = useState<FolderType | null>(null);
+  const [isPermanentModalOpen, setIsPermanentModalOpen] = useState(false);
+  const [permanentDeleteLoading, setPermanentDeleteLoading] = useState(false);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [searchQuery, setSearchQuery] = useState("");
+  const [files, setFiles] = useState<DriveFile[]>([]);
+  const [filesLoading, setFilesLoading] = useState(false);
+  const [filesError, setFilesError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [previewFile, setPreviewFile] = useState<DriveFile | null>(null);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const isInitialLoad = useRef(true);
   const lastUrlFolderId = useRef<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Load folder from URL on initial mount only
   useEffect(() => {
@@ -79,6 +102,46 @@ function DashboardShell() {
     }
   }, [currentFolderId, rootId, router, searchParams]);
 
+  const fetchFiles = useCallback(async () => {
+    if (!user || activeNav !== "My Drive") {
+      setFiles([]);
+      setFilesError(null);
+      setFilesLoading(false);
+      return;
+    }
+    setFilesLoading(true);
+    setFilesError(null);
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(
+        `/api/files?folderId=${encodeURIComponent(currentFolderId)}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error ?? "Unable to load files.");
+      }
+      const data = await response.json();
+      setFiles((data.files as DriveFile[]) ?? []);
+    } catch (error) {
+      console.error("Failed to fetch files:", error);
+      setFiles([]);
+      setFilesError(
+        error instanceof Error ? error.message : "Unable to load files.",
+      );
+    } finally {
+      setFilesLoading(false);
+    }
+  }, [user, activeNav, currentFolderId]);
+
+  useEffect(() => {
+    void fetchFiles();
+  }, [fetchFiles]);
+
   const getBreadcrumbs = () => {
     const breadcrumbs: Array<{ id: string; name: string }> = [];
     let currentId: string | null = currentFolderId;
@@ -97,6 +160,40 @@ function DashboardShell() {
     breadcrumbs.unshift({ id: rootId, name: "My Drive" });
     return breadcrumbs;
   };
+
+  const decodeFileName = useCallback((ciphertext: string) => {
+    if (!ciphertext) {
+      return "Encrypted file";
+    }
+    try {
+      return atob(ciphertext);
+    } catch {
+      return "Encrypted file";
+    }
+  }, []);
+
+  const formatFileSize = useCallback((bytes: number) => {
+    if (!Number.isFinite(bytes)) {
+      return "—";
+    }
+    if (bytes === 0) {
+      return "0 B";
+    }
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    const exponent = Math.min(
+      Math.floor(Math.log(bytes) / Math.log(1024)),
+      units.length - 1,
+    );
+    const value = bytes / Math.pow(1024, exponent);
+    return `${value.toFixed(exponent === 0 ? 0 : 1)} ${units[exponent]}`;
+  }, []);
+
+  const formatFileDate = useCallback((timestamp: number) => {
+    if (!timestamp) {
+      return "—";
+    }
+    return new Date(timestamp).toLocaleString();
+  }, []);
 
   const isMyDrive = activeNav === "My Drive";
   const isTrash = activeNav === "Trash";
@@ -146,6 +243,30 @@ function DashboardShell() {
 
   const shouldShowSearchResults = hasSearchQuery && !isTrash;
   const foldersToRender = shouldShowSearchResults ? searchResults : displayedFolders;
+
+  const filesToRender = useMemo(() => {
+    if (!isMyDrive) {
+      return [] as DriveFile[];
+    }
+    if (!hasSearchQuery) {
+      return files;
+    }
+    return files.filter((file) =>
+      decodeFileName(file.nameCiphertext)
+        .toLowerCase()
+        .includes(normalizedSearch),
+    );
+  }, [files, isMyDrive, hasSearchQuery, normalizedSearch, decodeFileName]);
+
+  const shouldUseCombinedView = isMyDrive && !isTrash;
+  const hasCombinedItems = shouldUseCombinedView
+    ? foldersToRender.length + filesToRender.length > 0
+    : foldersToRender.length > 0;
+  const showFilesSpinner =
+    shouldUseCombinedView &&
+    filesLoading &&
+    foldersToRender.length === 0 &&
+    filesToRender.length === 0;
   const showBreadcrumbs = isMyDrive && currentFolderId !== rootId;
 
   const handleFolderClick = (folderId: string) => {
@@ -155,17 +276,93 @@ function DashboardShell() {
     setCurrentFolderId(folderId);
   };
 
+  const handleFileClick = (file: DriveFile) => {
+    if (file.contentType.startsWith("image/") || file.contentType.startsWith("video/")) {
+      setPreviewFile(file);
+      setIsPreviewOpen(true);
+      return;
+    }
+    if (typeof window !== "undefined") {
+      window.open(file.url, "_blank", "noopener,noreferrer");
+    }
+  };
+
+  const handleUploadClick = () => {
+    if (activeNav !== "My Drive") {
+      setActiveNav("My Drive");
+      return;
+    }
+    fileInputRef.current?.click();
+  };
+
+  const handleFileInputChange = async (
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    if (!user) {
+      event.target.value = "";
+      return;
+    }
+    if (activeNav !== "My Drive") {
+      event.target.value = "";
+      return;
+    }
+    const selectedFiles = event.target.files
+      ? Array.from(event.target.files)
+      : [];
+    if (selectedFiles.length === 0) {
+      return;
+    }
+    setUploading(true);
+    try {
+      const token = await user.getIdToken();
+      for (const file of selectedFiles) {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("folderId", currentFolderId);
+        const response = await fetch("/api/files", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          body: formData,
+        });
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(
+            data.error ?? `Failed to upload "${file.name}".`,
+          );
+        }
+      }
+      await fetchFiles();
+    } catch (error) {
+      console.error("Upload failed:", error);
+      alert(error instanceof Error ? error.message : "Failed to upload file.");
+    } finally {
+      setUploading(false);
+      event.target.value = "";
+    }
+  };
+
   const handleDeleteClick = (folder: FolderType) => {
     setFolderToDelete({ id: folder.id, name: folder.name });
       setIsDeleteModalOpen(true);
+  };
+
+  const handleRestoreClick = async (folderId: string) => {
+    try {
+      setRestoringFolderId(folderId);
+      await restoreFolder(folderId);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Failed to restore folder");
+    } finally {
+      setRestoringFolderId(null);
+    }
   };
 
   const handleDeleteFolder = async () => {
     if (!folderToDelete) return;
     
     const folderId = folderToDelete.id;
-    setDeletingFolderId(folderId);
-    
     const folder = folders[folderId];
     const parentId = folder?.parentId || rootId;
     const isCurrentFolder = folderId === currentFolderId;
@@ -180,20 +377,38 @@ function DashboardShell() {
       }
     } catch (error) {
       alert(error instanceof Error ? error.message : "Failed to delete folder");
-    } finally {
-      setDeletingFolderId(null); // This state was missing in rewrite, adding back locally or ignoring if not used in UI components directly (FileGrid handles its own state for menu, but we need modal state)
-      // Wait, setDeletingFolderId is not used in FileGrid/FileList, but used for modal loading state maybe?
-      // The modal is standard.
     }
   };
 
-  // Temporary state for deleting loading indicator if needed, though modal handles it?
-  // Actually standard DeleteFolderModal doesn't seem to take a loading prop in the interface I saw earlier?
-  // Let's check DeleteFolderModal. It doesn't seem to have a loading prop, but the `onConfirm` is async so it might await.
-  // Ah, standard modal usually has internal state or parent handles it.
-  
-  // We need a state for deletingFolderId if we want to show spinners, but for now we just await.
-  const [_, setDeletingFolderId] = useState<string | null>(null); // Keeping for compatibility if I use it later
+  const openPermanentDeleteModal = (folder: FolderType) => {
+    setFolderToDeleteForever(folder);
+    setIsPermanentModalOpen(true);
+  };
+
+  const handlePermanentDelete = async () => {
+    if (!folderToDeleteForever) return;
+    const folderId = folderToDeleteForever.id;
+    setPermanentDeleteLoading(true);
+    setPermanentlyDeletingFolderId(folderId);
+    try {
+      await permanentDeleteFolder(folderId);
+      setIsPermanentModalOpen(false);
+      setFolderToDeleteForever(null);
+      await refreshTrash();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Failed to permanently delete folder");
+    } finally {
+      setPermanentDeleteLoading(false);
+      setPermanentlyDeletingFolderId(null);
+    }
+  };
+
+  const closePreview = () => {
+    if (isPreviewOpen) {
+      setIsPreviewOpen(false);
+    }
+    setPreviewFile(null);
+  };
 
   return (
     <div className="flex h-screen overflow-hidden bg-white">
@@ -238,37 +453,63 @@ function DashboardShell() {
             )}
 
             {/* View Header */}
-            <div className="mb-6 flex items-center justify-between">
+            <div className="mb-6 flex items-center justify-between gap-3 flex-wrap">
               <h2 className="text-xl font-medium text-zinc-800">
-                {activeNav === "Trash" 
-                  ? "Trash" 
+                {activeNav === "Trash"
+                  ? "Trash"
                   : activeNav === "Starred"
                     ? "Starred"
-                  : currentFolderId === rootId 
-                    ? "My Drive" 
-                    : folders[currentFolderId]?.name || "Folder"}
+                    : currentFolderId === rootId
+                      ? "My Drive"
+                      : folders[currentFolderId]?.name || "Folder"}
               </h2>
-              
+
               {!isTrash && (
-                <div className="flex items-center gap-2 rounded-lg border border-zinc-200 p-1">
+                <div className="flex items-center gap-3">
+                  <div className="relative">
                     <button
-                    onClick={() => setViewMode("list")}
-                    className={`rounded p-1.5 transition-colors ${
-                      viewMode === "list" ? "bg-zinc-100 text-zinc-900" : "text-zinc-500 hover:bg-zinc-50"
-                    }`}
-                    title="List view"
-                  >
-                    <ListIcon className="h-5 w-5" />
+                      onClick={handleUploadClick}
+                      disabled={uploading || activeNav !== "My Drive"}
+                      className={`rounded-lg border border-emerald-200 px-4 py-2 text-sm font-medium transition ${
+                        uploading || activeNav !== "My Drive"
+                          ? "cursor-not-allowed bg-zinc-100 text-zinc-400"
+                          : "bg-emerald-600 text-white hover:bg-emerald-500"
+                      }`}
+                    >
+                      {uploading ? "Uploading..." : "Upload file"}
+                    </button>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      onChange={handleFileInputChange}
+                      className="hidden"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 rounded-lg border border-zinc-200 p-1">
+                    <button
+                      onClick={() => setViewMode("list")}
+                      className={`rounded p-1.5 transition-colors ${
+                        viewMode === "list"
+                          ? "bg-zinc-100 text-zinc-900"
+                          : "text-zinc-500 hover:bg-zinc-50"
+                      }`}
+                      title="List view"
+                    >
+                      <ListIcon className="h-5 w-5" />
                     </button>
                     <button
                       onClick={() => setViewMode("grid")}
-                    className={`rounded p-1.5 transition-colors ${
-                      viewMode === "grid" ? "bg-zinc-100 text-zinc-900" : "text-zinc-500 hover:bg-zinc-50"
-                    }`}
-                    title="Grid view"
-                  >
-                    <LayoutGrid className="h-5 w-5" />
+                      className={`rounded p-1.5 transition-colors ${
+                        viewMode === "grid"
+                          ? "bg-zinc-100 text-zinc-900"
+                          : "text-zinc-500 hover:bg-zinc-50"
+                      }`}
+                      title="Grid view"
+                    >
+                      <LayoutGrid className="h-5 w-5" />
                     </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -312,20 +553,14 @@ function DashboardShell() {
                              </div>
                              <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                             <button
-                                 onClick={() => restoreFolder(folder.id)}
+                                 onClick={() => void handleRestoreClick(folder.id)}
                               disabled={restoringFolderId === folder.id}
                                  className="text-xs font-medium text-emerald-600 hover:text-emerald-700 px-3 py-1.5 hover:bg-emerald-50 rounded-md transition-colors"
                             >
                               {restoringFolderId === folder.id ? "Restoring..." : "Restore"}
                             </button>
                               <button
-                                onClick={async () => {
-                                   if(confirm("Delete forever?")) {
-                                  setPermanentlyDeletingFolderId(folder.id);
-                                    await permanentDeleteFolder(folder.id);
-                                    setPermanentlyDeletingFolderId(null);
-                                  }
-                                }}
+                                onClick={() => openPermanentDeleteModal(folder)}
                                 disabled={permanentlyDeletingFolderId === folder.id}
                                  className="text-xs font-medium text-red-600 hover:text-red-700 px-3 py-1.5 hover:bg-red-50 rounded-md transition-colors"
                               >
@@ -338,8 +573,67 @@ function DashboardShell() {
                     </div>
                   )}
               </div>
+            ) : shouldUseCombinedView ? (
+              hasCombinedItems ? (
+                viewMode === "grid" ? (
+                  <FileGrid
+                    folders={foldersToRender}
+                    files={filesToRender}
+                    onFolderClick={handleFolderClick}
+                    onFileClick={handleFileClick}
+                    onToggleStar={(id, star) => toggleStarred(id, star)}
+                    onDelete={handleDeleteClick}
+                    getFileName={(file) => decodeFileName(file.nameCiphertext)}
+                    formatFileSize={formatFileSize}
+                  />
+                ) : (
+                  <FileList
+                    folders={foldersToRender}
+                    files={filesToRender}
+                    onFolderClick={handleFolderClick}
+                    onFileClick={handleFileClick}
+                    onToggleStar={(id, star) => toggleStarred(id, star)}
+                    onDelete={handleDeleteClick}
+                    getFileName={(file) => decodeFileName(file.nameCiphertext)}
+                    formatFileDate={formatFileDate}
+                    formatFileSize={formatFileSize}
+                  />
+                )
+              ) : showFilesSpinner ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" />
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-24 text-center">
+                  {hasSearchQuery ? (
+                    <>
+                      <div className="mb-4 rounded-full bg-zinc-100 p-4">
+                        <span className="text-3xl">🔍</span>
+                      </div>
+                      <p className="text-lg font-medium text-zinc-900">No results found</p>
+                      <p className="text-zinc-500">Try different keywords</p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="mb-6 relative">
+                        <div className="absolute -inset-4 bg-emerald-100/50 rounded-full blur-xl" />
+                        <Image
+                          src="/file.svg"
+                          alt="Empty"
+                          width={120}
+                          height={120}
+                          className="relative opacity-50"
+                        />
+                      </div>
+                      <h3 className="text-lg font-medium text-zinc-900">No folders or files here yet</h3>
+                      <p className="text-sm text-zinc-500 mt-1 max-w-sm mx-auto">
+                        Use the New or Upload buttons to add content to this folder.
+                      </p>
+                    </>
+                  )}
+                </div>
+              )
             ) : (
-              /* Main Files View */
               foldersToRender.length > 0 ? (
                 viewMode === "grid" ? (
                   <FileGrid
@@ -357,23 +651,22 @@ function DashboardShell() {
                   />
                 )
               ) : (
-                /* Empty State */
                 <div className="flex flex-col items-center justify-center py-24 text-center">
                   {hasSearchQuery ? (
-                     <>
-                       <div className="mb-4 rounded-full bg-zinc-100 p-4">
-                         <span className="text-3xl">🔍</span>
-                        </div>
-                       <p className="text-lg font-medium text-zinc-900">No results found</p>
-                       <p className="text-zinc-500">Try different keywords</p>
-                     </>
+                    <>
+                      <div className="mb-4 rounded-full bg-zinc-100 p-4">
+                        <span className="text-3xl">🔍</span>
+                      </div>
+                      <p className="text-lg font-medium text-zinc-900">No results found</p>
+                      <p className="text-zinc-500">Try different keywords</p>
+                    </>
                   ) : isStarredView ? (
                     <>
-                       <div className="mb-4 rounded-full bg-amber-50 p-4">
-                         <Star className="h-8 w-8 text-amber-400 fill-amber-400" />
-                        </div>
-                       <p className="text-lg font-medium text-zinc-900">No starred folders</p>
-                       <p className="text-zinc-500">Add folders to starred for quick access</p>
+                      <div className="mb-4 rounded-full bg-amber-50 p-4">
+                        <Star className="h-8 w-8 text-amber-400 fill-amber-400" />
+                      </div>
+                      <p className="text-lg font-medium text-zinc-900">No starred folders</p>
+                      <p className="text-zinc-500">Add folders to starred for quick access</p>
                     </>
                   ) : (
                     <>
@@ -386,15 +679,69 @@ function DashboardShell() {
                           height={120}
                           className="relative opacity-50"
                         />
-                    </div>
-                      <h3 className="text-lg font-medium text-zinc-900">This folder is empty</h3>
+                      </div>
+                      <h3 className="text-lg font-medium text-zinc-900">This section is empty</h3>
                       <p className="text-sm text-zinc-500 mt-1 max-w-sm mx-auto">
-                        Use the "New" button to create folders and organize your files.
+                        Use the New button to create folders and organize your files.
                       </p>
                     </>
                   )}
                 </div>
               )
+            )}
+
+            {activeNav === "My Drive" && !loading && (
+              <section className="mt-10 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-base font-semibold text-zinc-800">
+                    Files
+                  </h3>
+                  {filesLoading && (
+                    <span className="text-sm text-zinc-500">Refreshing…</span>
+                  )}
+                </div>
+                {filesError && (
+                  <p className="text-sm text-red-600">{filesError}</p>
+                )}
+                {!filesError && files.length === 0 && !filesLoading ? (
+                  <p className="text-sm text-zinc-500">
+                    No files in this folder yet.
+                  </p>
+                ) : (
+                  <div className="overflow-hidden rounded-lg border border-zinc-200">
+                    <table className="min-w-full text-left text-sm">
+                      <thead>
+                        <tr className="border-b border-zinc-200 text-zinc-500">
+                          <th className="px-4 py-3 font-medium w-1/2">
+                            Name
+                          </th>
+                          <th className="px-4 py-3 font-medium">Type</th>
+                          <th className="px-4 py-3 font-medium">Size</th>
+                          <th className="px-4 py-3 font-medium">Uploaded</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-100">
+                        {files.map((file) => (
+                          <tr key={file.id} className="hover:bg-zinc-50">
+                            <td className="px-4 py-3 font-medium text-zinc-900">
+                              {decodeFileName(file.nameCiphertext)}
+                            </td>
+                            <td className="px-4 py-3 text-zinc-600">
+                              {file.contentType || "—"}
+                            </td>
+                            <td className="px-4 py-3 text-zinc-600">
+                              {formatFileSize(file.size)}
+                            </td>
+                            <td className="px-4 py-3 text-zinc-600">
+                              {formatFileDate(file.createdAt)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
             )}
           </div>
         </main>
@@ -419,6 +766,26 @@ function DashboardShell() {
           folderId={folderToDelete.id}
         />
       )}
+
+      <ConfirmModal
+        isOpen={isPermanentModalOpen}
+        onClose={() => {
+          if (permanentDeleteLoading) return;
+          setIsPermanentModalOpen(false);
+          setFolderToDeleteForever(null);
+        }}
+        onConfirm={handlePermanentDelete}
+        title="Delete forever?"
+        description={`${folderToDeleteForever?.name ?? "This folder"} and all of its contents will be permanently removed.`}
+        confirmLabel="Delete Forever"
+        destructive
+        loading={permanentDeleteLoading}
+      />
+      <FilePreviewModal
+        isOpen={isPreviewOpen && !!previewFile}
+        file={previewFile}
+        onClose={closePreview}
+      />
     </div>
   );
 }

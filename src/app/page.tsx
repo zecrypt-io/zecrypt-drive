@@ -91,7 +91,7 @@ export default function Home() {
               Privacy without compromise.
             </h2>
             <p className="mt-4 text-lg text-zinc-600">
-              We built ZeCrypt to prove that secure software doesn't have to be difficult to use.
+              We built ZeCrypt to prove that secure software doesn&apos;t have to be difficult to use.
             </p>
           </div>
 
