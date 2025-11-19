@@ -11,11 +11,14 @@ interface FileListProps {
   files?: DriveFile[];
   onFolderClick: (id: string) => void;
   onFileClick?: (file: DriveFile) => void;
+  onFileDetails?: (file: DriveFile) => void;
+  onFileDelete?: (file: DriveFile) => void;
   onToggleStar: (id: string, isStarred: boolean) => void;
   onDelete: (folder: Folder) => void;
   getFileName?: (file: DriveFile) => string;
   formatFileDate?: (timestamp: number) => string;
   formatFileSize?: (bytes: number) => string;
+  deletingFileId?: string | null;
 }
 
 export function FileList({ 
@@ -23,11 +26,14 @@ export function FileList({
   files = [],
   onFolderClick,
   onFileClick,
+  onFileDetails,
+  onFileDelete,
   onToggleStar,
   onDelete,
   getFileName,
   formatFileDate,
   formatFileSize,
+  deletingFileId,
 }: FileListProps) {
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -149,7 +155,7 @@ export function FileList({
               <tr
                 key={item.file.id}
                 onClick={() => onFileClick?.(item.file)}
-                className="cursor-pointer transition-colors hover:bg-zinc-50"
+                className="group cursor-pointer transition-colors hover:bg-zinc-50"
               >
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-3">
@@ -180,7 +186,6 @@ export function FileList({
                       <p className="font-medium text-zinc-900">
                         {getFileName ? getFileName(item.file) : item.file.nameCiphertext}
                       </p>
-                      <p className="text-xs text-zinc-500">File</p>
                     </div>
                   </div>
                 </td>
@@ -191,7 +196,46 @@ export function FileList({
                 <td className="px-4 py-3 text-zinc-600">
                   {formatFileSize ? formatFileSize(item.file.size) : `${item.file.size} B`}
                 </td>
-                <td />
+                <td className="px-4 py-3">
+                  <div className="relative" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      onClick={() => setActiveMenu(`file-${item.file.id}`)}
+                      className={`flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-zinc-200 hover:text-zinc-600 ${
+                        activeMenu === `file-${item.file.id}` ? "bg-zinc-200 text-zinc-600" : "opacity-0 group-hover:opacity-100"
+                      }`}
+                      aria-label="File actions"
+                    >
+                      <MoreVertical className="h-4 w-4" />
+                    </button>
+                    {activeMenu === `file-${item.file.id}` && (
+                      <div
+                        ref={menuRef}
+                        className="absolute right-0 top-full z-10 mt-1 w-44 rounded-lg border border-zinc-100 bg-white shadow-lg py-1"
+                      >
+                        <button
+                          onClick={() => {
+                            onFileDetails?.(item.file);
+                            setActiveMenu(null);
+                          }}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+                        >
+                          Show details
+                        </button>
+                        <div className="my-1 border-t border-zinc-100" />
+                        <button
+                          onClick={() => {
+                            onFileDelete?.(item.file);
+                            setActiveMenu(null);
+                          }}
+                          disabled={!!deletingFileId && deletingFileId === item.file.id}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {deletingFileId === item.file.id ? "Deleting..." : "Delete"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </td>
               </tr>
             )
           )}

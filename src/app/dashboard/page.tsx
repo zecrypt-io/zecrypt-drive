@@ -22,6 +22,7 @@ import { FileGrid } from "@/components/dashboard/file-grid";
 import { FileList } from "@/components/dashboard/file-list";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { FilePreviewModal } from "@/components/ui/file-preview-modal";
+import { FileDetailsModal } from "@/components/ui/file-details-modal";
 import { LayoutGrid, List as ListIcon, Folder as FolderIcon, Star, Trash2, ChevronRight } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import type { DriveFile } from "@/types/files";
@@ -60,10 +61,12 @@ function DashboardShell() {
   const [searchQuery, setSearchQuery] = useState("");
   const [files, setFiles] = useState<DriveFile[]>([]);
   const [filesLoading, setFilesLoading] = useState(false);
-  const [filesError, setFilesError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [previewFile, setPreviewFile] = useState<DriveFile | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [detailsFile, setDetailsFile] = useState<DriveFile | null>(null);
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [deletingFileId, setDeletingFileId] = useState<string | null>(null);
   const isInitialLoad = useRef(true);
   const lastUrlFolderId = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -105,12 +108,10 @@ function DashboardShell() {
   const fetchFiles = useCallback(async () => {
     if (!user || activeNav !== "My Drive") {
       setFiles([]);
-      setFilesError(null);
       setFilesLoading(false);
       return;
     }
     setFilesLoading(true);
-    setFilesError(null);
     try {
       const token = await user.getIdToken();
       const response = await fetch(
@@ -130,9 +131,6 @@ function DashboardShell() {
     } catch (error) {
       console.error("Failed to fetch files:", error);
       setFiles([]);
-      setFilesError(
-        error instanceof Error ? error.message : "Unable to load files.",
-      );
     } finally {
       setFilesLoading(false);
     }
@@ -284,6 +282,45 @@ function DashboardShell() {
     }
     if (typeof window !== "undefined") {
       window.open(file.url, "_blank", "noopener,noreferrer");
+    }
+  };
+
+  const handleShowDetails = (file: DriveFile) => {
+    setDetailsFile(file);
+    setIsDetailsOpen(true);
+  };
+
+  const closeDetails = () => {
+    setIsDetailsOpen(false);
+    setDetailsFile(null);
+  };
+
+  const handleDeleteFile = async (file: DriveFile) => {
+    if (!user) return;
+    const confirmed =
+      typeof window === "undefined" ? true : window.confirm("Delete this file permanently?");
+    if (!confirmed) {
+      return;
+    }
+    try {
+      setDeletingFileId(file.id);
+      const token = await user.getIdToken();
+      const response = await fetch(`/api/files?fileId=${encodeURIComponent(file.id)}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error ?? "Failed to delete file.");
+      }
+      await fetchFiles();
+    } catch (error) {
+      console.error("Delete file failed:", error);
+      alert(error instanceof Error ? error.message : "Failed to delete file.");
+    } finally {
+      setDeletingFileId(null);
     }
   };
 
@@ -581,10 +618,12 @@ function DashboardShell() {
                     files={filesToRender}
                     onFolderClick={handleFolderClick}
                     onFileClick={handleFileClick}
+                    onFileDetails={handleShowDetails}
+                    onFileDelete={handleDeleteFile}
                     onToggleStar={(id, star) => toggleStarred(id, star)}
                     onDelete={handleDeleteClick}
                     getFileName={(file) => decodeFileName(file.nameCiphertext)}
-                    formatFileSize={formatFileSize}
+                    deletingFileId={deletingFileId}
                   />
                 ) : (
                   <FileList
@@ -592,11 +631,14 @@ function DashboardShell() {
                     files={filesToRender}
                     onFolderClick={handleFolderClick}
                     onFileClick={handleFileClick}
+                    onFileDetails={handleShowDetails}
+                    onFileDelete={handleDeleteFile}
                     onToggleStar={(id, star) => toggleStarred(id, star)}
                     onDelete={handleDeleteClick}
                     getFileName={(file) => decodeFileName(file.nameCiphertext)}
                     formatFileDate={formatFileDate}
                     formatFileSize={formatFileSize}
+                    deletingFileId={deletingFileId}
                   />
                 )
               ) : showFilesSpinner ? (
@@ -646,6 +688,8 @@ function DashboardShell() {
                   <FileList
                     folders={foldersToRender}
                     onFolderClick={handleFolderClick}
+                    onFileDetails={handleShowDetails}
+                    onFileDelete={handleDeleteFile}
                     onToggleStar={(id, star) => toggleStarred(id, star)}
                     onDelete={handleDeleteClick}
                   />
@@ -690,59 +734,6 @@ function DashboardShell() {
               )
             )}
 
-            {activeNav === "My Drive" && !loading && (
-              <section className="mt-10 space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-base font-semibold text-zinc-800">
-                    Files
-                  </h3>
-                  {filesLoading && (
-                    <span className="text-sm text-zinc-500">Refreshing…</span>
-                  )}
-                </div>
-                {filesError && (
-                  <p className="text-sm text-red-600">{filesError}</p>
-                )}
-                {!filesError && files.length === 0 && !filesLoading ? (
-                  <p className="text-sm text-zinc-500">
-                    No files in this folder yet.
-                  </p>
-                ) : (
-                  <div className="overflow-hidden rounded-lg border border-zinc-200">
-                    <table className="min-w-full text-left text-sm">
-                      <thead>
-                        <tr className="border-b border-zinc-200 text-zinc-500">
-                          <th className="px-4 py-3 font-medium w-1/2">
-                            Name
-                          </th>
-                          <th className="px-4 py-3 font-medium">Type</th>
-                          <th className="px-4 py-3 font-medium">Size</th>
-                          <th className="px-4 py-3 font-medium">Uploaded</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-zinc-100">
-                        {files.map((file) => (
-                          <tr key={file.id} className="hover:bg-zinc-50">
-                            <td className="px-4 py-3 font-medium text-zinc-900">
-                              {decodeFileName(file.nameCiphertext)}
-                            </td>
-                            <td className="px-4 py-3 text-zinc-600">
-                              {file.contentType || "—"}
-                            </td>
-                            <td className="px-4 py-3 text-zinc-600">
-                              {formatFileSize(file.size)}
-                            </td>
-                            <td className="px-4 py-3 text-zinc-600">
-                              {formatFileDate(file.createdAt)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </section>
-            )}
           </div>
         </main>
         </div>
@@ -785,6 +776,14 @@ function DashboardShell() {
         isOpen={isPreviewOpen && !!previewFile}
         file={previewFile}
         onClose={closePreview}
+      />
+      <FileDetailsModal
+        isOpen={isDetailsOpen && !!detailsFile}
+        file={detailsFile}
+        onClose={closeDetails}
+        decodeFileName={decodeFileName}
+        formatFileSize={formatFileSize}
+        formatFileDate={formatFileDate}
       />
     </div>
   );

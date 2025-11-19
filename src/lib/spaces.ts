@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 function requiredEnv(key: string): string {
@@ -55,6 +55,14 @@ export async function getSpacesSignedUrl(key: string, expiresInSeconds = 300) {
     Key: key,
   });
   return getSignedUrl(spacesClient, command, { expiresIn: expiresInSeconds });
+}
+
+export async function deleteFromSpaces(key: string): Promise<void> {
+  const command = new DeleteObjectCommand({
+    Bucket: bucket,
+    Key: key,
+  });
+  await spacesClient.send(command);
 }
 
 

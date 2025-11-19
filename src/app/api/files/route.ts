@@ -5,8 +5,10 @@ import {
   createFileDoc,
   getFolderById,
   listFilesInFolder,
+  getFileById,
+  deleteFileDoc,
 } from "@/lib/db";
-import { uploadToSpaces, getSpacesSignedUrl } from "@/lib/spaces";
+import { uploadToSpaces, getSpacesSignedUrl, deleteFromSpaces } from "@/lib/spaces";
 
 const ROOT_ID = "root";
 
@@ -151,6 +153,37 @@ export async function POST(request: Request) {
     console.error("File upload failed:", error);
     const message =
       error instanceof Error ? error.message : "Failed to upload file";
+    const status = message === "Unauthorized" ? 401 : 500;
+    return NextResponse.json({ error: message }, { status });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const userId = await authenticate(request);
+    const { searchParams } = new URL(request.url);
+    const fileId = searchParams.get("fileId");
+
+    if (!fileId) {
+      return NextResponse.json(
+        { error: "fileId is required." },
+        { status: 400 },
+      );
+    }
+
+    const file = await getFileById(userId, fileId);
+    if (!file) {
+      return NextResponse.json({ error: "File not found." }, { status: 404 });
+    }
+
+    await deleteFromSpaces(file.storageKey);
+    await deleteFileDoc(userId, fileId);
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("File delete failed:", error);
+    const message =
+      error instanceof Error ? error.message : "Failed to delete file";
     const status = message === "Unauthorized" ? 401 : 500;
     return NextResponse.json({ error: message }, { status });
   }
