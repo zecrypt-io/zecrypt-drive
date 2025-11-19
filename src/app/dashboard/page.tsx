@@ -170,6 +170,23 @@ function DashboardShell() {
     }
   }, []);
 
+  const truncateName = useCallback((name: string, max = 24) => {
+    if (name.length <= max) {
+      return name;
+    }
+    return `${name.slice(0, max - 1)}…`;
+  }, []);
+
+  const getFileDisplayName = useCallback(
+    (file: DriveFile) => truncateName(decodeFileName(file.nameCiphertext)),
+    [decodeFileName, truncateName],
+  );
+
+  const getFileFullName = useCallback(
+    (file: DriveFile) => decodeFileName(file.nameCiphertext),
+    [decodeFileName],
+  );
+
   const formatFileSize = useCallback((bytes: number) => {
     if (!Number.isFinite(bytes)) {
       return "—";
@@ -622,7 +639,8 @@ function DashboardShell() {
                     onFileDelete={handleDeleteFile}
                     onToggleStar={(id, star) => toggleStarred(id, star)}
                     onDelete={handleDeleteClick}
-                    getFileName={(file) => decodeFileName(file.nameCiphertext)}
+                    getFileDisplayName={getFileDisplayName}
+                    getFileTooltip={getFileFullName}
                     deletingFileId={deletingFileId}
                   />
                 ) : (
@@ -635,7 +653,8 @@ function DashboardShell() {
                     onFileDelete={handleDeleteFile}
                     onToggleStar={(id, star) => toggleStarred(id, star)}
                     onDelete={handleDeleteClick}
-                    getFileName={(file) => decodeFileName(file.nameCiphertext)}
+                    getFileDisplayName={getFileDisplayName}
+                    getFileTooltip={getFileFullName}
                     formatFileDate={formatFileDate}
                     formatFileSize={formatFileSize}
                     deletingFileId={deletingFileId}

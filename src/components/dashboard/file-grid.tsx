@@ -15,7 +15,8 @@ interface FileGridProps {
   onFileDelete?: (file: DriveFile) => void;
   onToggleStar: (id: string, isStarred: boolean) => void;
   onDelete: (folder: Folder) => void;
-  getFileName?: (file: DriveFile) => string;
+  getFileDisplayName?: (file: DriveFile) => string;
+  getFileTooltip?: (file: DriveFile) => string;
   deletingFileId?: string | null;
 }
 
@@ -28,7 +29,8 @@ export function FileGrid({
   onFileDelete,
   onToggleStar,
   onDelete,
-  getFileName,
+  getFileDisplayName,
+  getFileTooltip,
   deletingFileId,
 }: FileGridProps) {
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
@@ -145,7 +147,13 @@ export function FileGrid({
               {item.file.contentType.startsWith("image/") ? (
                 <Image
                   src={item.file.url}
-                  alt={getFileName ? getFileName(item.file) : item.file.nameCiphertext}
+                  alt={
+                    getFileTooltip
+                      ? getFileTooltip(item.file)
+                      : getFileDisplayName
+                        ? getFileDisplayName(item.file)
+                        : item.file.nameCiphertext
+                  }
                   fill
                   className="object-cover"
                   sizes="(max-width: 768px) 40vw, 200px"
@@ -168,9 +176,17 @@ export function FileGrid({
               <div className="flex flex-1 flex-col">
                 <p
                   className="truncate text-sm font-medium text-zinc-900"
-                  title={getFileName ? getFileName(item.file) : item.file.nameCiphertext}
+                  title={
+                    getFileTooltip
+                      ? getFileTooltip(item.file)
+                      : getFileDisplayName
+                        ? getFileDisplayName(item.file)
+                        : item.file.nameCiphertext
+                  }
                 >
-                  {getFileName ? getFileName(item.file) : item.file.nameCiphertext}
+                  {getFileDisplayName
+                    ? getFileDisplayName(item.file)
+                    : item.file.nameCiphertext}
                 </p>
               </div>
               <div className="relative" onClick={(e) => e.stopPropagation()}>

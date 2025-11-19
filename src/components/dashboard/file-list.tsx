@@ -15,14 +15,15 @@ interface FileListProps {
   onFileDelete?: (file: DriveFile) => void;
   onToggleStar: (id: string, isStarred: boolean) => void;
   onDelete: (folder: Folder) => void;
-  getFileName?: (file: DriveFile) => string;
+  getFileDisplayName?: (file: DriveFile) => string;
+  getFileTooltip?: (file: DriveFile) => string;
   formatFileDate?: (timestamp: number) => string;
   formatFileSize?: (bytes: number) => string;
   deletingFileId?: string | null;
 }
 
-export function FileList({ 
-  folders, 
+export function FileList({
+  folders,
   files = [],
   onFolderClick,
   onFileClick,
@@ -30,7 +31,8 @@ export function FileList({
   onFileDelete,
   onToggleStar,
   onDelete,
-  getFileName,
+  getFileDisplayName,
+  getFileTooltip,
   formatFileDate,
   formatFileSize,
   deletingFileId,
@@ -163,7 +165,13 @@ export function FileList({
                       {item.file.contentType.startsWith("image/") ? (
                         <Image
                           src={item.file.url}
-                          alt={getFileName ? getFileName(item.file) : item.file.nameCiphertext}
+                          alt={
+                            getFileTooltip
+                              ? getFileTooltip(item.file)
+                              : getFileDisplayName
+                                ? getFileDisplayName(item.file)
+                                : item.file.nameCiphertext
+                          }
                           fill
                           className="object-cover"
                           sizes="40px"
@@ -183,8 +191,19 @@ export function FileList({
                       )}
                     </div>
                     <div>
-                      <p className="font-medium text-zinc-900">
-                        {getFileName ? getFileName(item.file) : item.file.nameCiphertext}
+                      <p
+                        className="font-medium text-zinc-900"
+                        title={
+                          getFileTooltip
+                            ? getFileTooltip(item.file)
+                            : getFileDisplayName
+                              ? getFileDisplayName(item.file)
+                              : item.file.nameCiphertext
+                        }
+                      >
+                        {getFileDisplayName
+                          ? getFileDisplayName(item.file)
+                          : item.file.nameCiphertext}
                       </p>
                     </div>
                   </div>
