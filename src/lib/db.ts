@@ -29,6 +29,7 @@ export interface FileDoc {
   checksum: string;
   iv: string;
   keyEnvelope: string;
+  relativePath?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -298,6 +299,7 @@ export async function createFileDoc(input: {
   checksum: string;
   iv: string;
   keyEnvelope: string;
+  relativePath?: string;
 }): Promise<{ id: string } & FileDoc> {
   const now = Date.now();
   const doc: FileDoc = {
@@ -310,6 +312,7 @@ export async function createFileDoc(input: {
     checksum: input.checksum,
     iv: input.iv,
     keyEnvelope: input.keyEnvelope,
+    relativePath: input.relativePath,
     createdAt: now,
     updatedAt: now,
   };
@@ -376,6 +379,38 @@ export async function getTotalFileSizeForUser(userId: string) {
     totalBytes += data.size || 0;
   });
   return { totalBytes, fileCount: snapshot.size };
+}
+
+export async function ensureFolderPath(
+  userId: string,
+  startingFolderId: string,
+  segments: string[],
+): Promise<string> {
+  let currentParentId = startingFolderId;
+
+  for (const rawSegment of segments) {
+    if (!rawSegment) continue;
+
+    const snapshot = await folderCollection().where("parentId", "==", currentParentId).get();
+    const existingDoc = snapshot.docs.find((doc) => {
+      const data = doc.data() as FolderDoc;
+      return data.userId === userId && data.name === rawSegment && !data.deletedAt;
+    });
+
+    if (existingDoc) {
+      currentParentId = existingDoc.id;
+      continue;
+    }
+
+    const created = await createFolder({
+      name: rawSegment,
+      parentId: currentParentId,
+      userId,
+    });
+    currentParentId = created.id;
+  }
+
+  return currentParentId;
 }
 
 

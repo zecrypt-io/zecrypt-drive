@@ -8,6 +8,7 @@ import {
   getFileById,
   deleteFileDoc,
   getTotalFileSizeForUser,
+  ensureFolderPath,
 } from "@/lib/db";
 import { uploadToSpaces, getSpacesSignedUrl, deleteFromSpaces } from "@/lib/spaces";
 
@@ -25,6 +26,47 @@ async function authenticate(request: Request) {
 
 function sanitizeFileName(name: string) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+function sanitizePathSegment(segment: string) {
+  const trimmed = segment.trim();
+  if (!trimmed || trimmed === "." || trimmed === "..") {
+    return null;
+  }
+  if (trimmed.includes("..")) {
+    return null;
+  }
+  return trimmed.replace(/[\\]/g, "");
+}
+
+function normalizeRelativePath(value: FormDataEntryValue | null) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  let normalized = value.replace(/\\/g, "/").trim();
+  normalized = normalized.replace(/^\/+/, "");
+  if (!normalized) {
+    return null;
+  }
+  const segments = normalized.split("/").filter(Boolean);
+  if (segments.length <= 1) {
+    return null;
+  }
+
+  // Last segment is the file name; folders are everything before it
+  segments.pop();
+  const sanitizedSegments = segments
+    .map((segment) => sanitizePathSegment(segment))
+    .filter((segment): segment is string => Boolean(segment));
+
+  if (sanitizedSegments.length === 0) {
+    return null;
+  }
+
+  return {
+    folderSegments: sanitizedSegments,
+    folderPath: sanitizedSegments.join("/"),
+  };
 }
 
 export async function GET(request: Request) {
@@ -104,6 +146,8 @@ export async function POST(request: Request) {
       }
     }
 
+    const relativePathInfo = normalizeRelativePath(formData.get("relativePath"));
+
     const contentType = file.type || "application/octet-stream";
     const originalName = file.name || "upload.bin";
     const safeName = sanitizeFileName(originalName.toLowerCase());
@@ -119,7 +163,17 @@ export async function POST(request: Request) {
 
     const checksum = createHash("sha256").update(buffer).digest("hex");
     const randomSuffix = randomBytes(8).toString("hex");
-    const storageKey = `users/${userId}/${folderId}/${Date.now()}-${randomSuffix}-${safeName}`;
+    let targetFolderId = folderId;
+    if (relativePathInfo?.folderSegments.length) {
+      targetFolderId = await ensureFolderPath(userId, folderId, relativePathInfo.folderSegments);
+    }
+
+    const nestedPrefix =
+      relativePathInfo && relativePathInfo.folderSegments.length > 0
+        ? `${relativePathInfo.folderSegments.join("/")}/`
+        : "";
+
+    const storageKey = `users/${userId}/${targetFolderId}/${nestedPrefix}${Date.now()}-${randomSuffix}-${safeName}`;
 
     await uploadToSpaces({
       key: storageKey,
@@ -143,7 +197,7 @@ export async function POST(request: Request) {
 
     const fileDoc = await createFileDoc({
       userId,
-      folderId,
+      folderId: targetFolderId,
       nameCiphertext,
       contentType,
       size: buffer.length,
@@ -151,6 +205,7 @@ export async function POST(request: Request) {
       checksum,
       iv,
       keyEnvelope,
+      relativePath: relativePathInfo?.folderPath,
     });
 
     const url = await getSpacesSignedUrl(storageKey);

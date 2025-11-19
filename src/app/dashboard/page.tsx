@@ -9,6 +9,7 @@ import {
   Suspense,
   useCallback,
   type ChangeEvent,
+  type DragEvent,
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AuthGuard } from "@/components/auth/auth-guard";
@@ -16,6 +17,7 @@ import { FolderProvider, useFolders } from "@/contexts/folder-context";
 import type { Folder as FolderType } from "@/contexts/folder-context";
 import { CreateFolderModal } from "@/components/folders/create-folder-modal";
 import { DeleteFolderModal } from "@/components/folders/delete-folder-modal";
+import { UploadProgress, type UploadItem } from "@/components/ui/upload-progress";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { Header } from "@/components/dashboard/header";
 import { FileGrid } from "@/components/dashboard/file-grid";
@@ -23,7 +25,7 @@ import { FileList } from "@/components/dashboard/file-list";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { FilePreviewModal } from "@/components/ui/file-preview-modal";
 import { FileDetailsModal } from "@/components/ui/file-details-modal";
-import { LayoutGrid, List as ListIcon, Folder as FolderIcon, Star, Trash2, ChevronRight } from "lucide-react";
+import { LayoutGrid, List as ListIcon, Folder as FolderIcon, Star, Trash2, ChevronRight, Upload } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import type { DriveFile } from "@/types/files";
 
@@ -40,6 +42,7 @@ function DashboardShell() {
     starredFolders,
     refreshTrash,
     toggleStarred,
+    refresh,
   } = useFolders();
   const { user } = useAuth();
   
@@ -67,6 +70,8 @@ function DashboardShell() {
   const [detailsFile, setDetailsFile] = useState<DriveFile | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [deletingFileId, setDeletingFileId] = useState<string | null>(null);
+  const [dragActive, setDragActive] = useState(false);
+  const [uploads, setUploads] = useState<UploadItem[]>([]);
   const isInitialLoad = useRef(true);
   const lastUrlFolderId = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -381,9 +386,178 @@ function DashboardShell() {
     fileInputRef.current?.click();
   };
 
-  const handleFileInputChange = async (
-    event: ChangeEvent<HTMLInputElement>,
-  ) => {
+  const uploadFilesWithPaths = useCallback(
+    async (items: Array<{ file: File; relativePath?: string }>) => {
+      if (!user || activeNav !== "My Drive" || items.length === 0) {
+        return;
+      }
+      setUploading(true);
+
+      const newUploads: UploadItem[] = items.map((item) => ({
+        id: Math.random().toString(36).slice(2) + Date.now().toString(36),
+        file: item.file,
+        relativePath: item.relativePath,
+        status: "pending",
+        progress: 0,
+      }));
+
+      setUploads((prev) => [...prev, ...newUploads]);
+
+      try {
+        const token = await user.getIdToken();
+
+        for (const item of newUploads) {
+          setUploads((prev) =>
+            prev.map((u) => (u.id === item.id ? { ...u, status: "uploading" } : u))
+          );
+
+          try {
+            await new Promise<void>((resolve, reject) => {
+              const xhr = new XMLHttpRequest();
+              xhr.open("POST", "/api/files");
+              xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+
+              xhr.upload.onprogress = (event) => {
+                if (event.lengthComputable) {
+                  const progress = (event.loaded / event.total) * 100;
+                  setUploads((prev) =>
+                    prev.map((u) => (u.id === item.id ? { ...u, progress } : u))
+                  );
+                }
+              };
+
+              xhr.onload = () => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                  resolve();
+                } else {
+                  try {
+                    const res = JSON.parse(xhr.responseText);
+                    reject(new Error(res.error || "Upload failed"));
+                  } catch {
+                    reject(new Error("Upload failed"));
+                  }
+                }
+              };
+
+              xhr.onerror = () => reject(new Error("Network error"));
+
+              const formData = new FormData();
+              formData.append("file", item.file);
+              formData.append("folderId", currentFolderId);
+              if (item.relativePath) {
+                formData.append("relativePath", item.relativePath);
+              }
+              xhr.send(formData);
+            });
+
+            setUploads((prev) =>
+              prev.map((u) =>
+                u.id === item.id ? { ...u, status: "completed", progress: 100 } : u
+              )
+            );
+          } catch (error) {
+            console.error(`Failed to upload ${item.file.name}:`, error);
+            setUploads((prev) =>
+              prev.map((u) =>
+                u.id === item.id
+                  ? { ...u, status: "error", error: error instanceof Error ? error.message : "Failed" }
+                  : u
+              )
+            );
+          }
+        }
+
+        await Promise.all([fetchFiles(), refresh()]);
+      } catch (error) {
+        console.error("Upload sequence failed:", error);
+        alert("Some uploads may have failed. Check the progress list.");
+      } finally {
+        setUploading(false);
+      }
+    },
+    [user, activeNav, currentFolderId, fetchFiles, refresh],
+  );
+
+  const traverseFileTree = useCallback(
+    async (entry: FileSystemEntry, pathPrefix = ""): Promise<Array<{ file: File; relativePath?: string }>> => {
+      if (entry.isFile) {
+        return await new Promise((resolve, reject) => {
+          (entry as FileSystemFileEntry).file(
+            (file) => {
+              resolve([{ file, relativePath: pathPrefix ? `${pathPrefix}/${file.name}` : file.name }]);
+            },
+            (error) => reject(error),
+          );
+        });
+      }
+
+      if (entry.isDirectory) {
+        const directoryReader = (entry as FileSystemDirectoryEntry).createReader();
+        const entries: FileSystemEntry[] = [];
+
+        const readEntries = (): Promise<void> =>
+          new Promise((resolve, reject) => {
+            directoryReader.readEntries(async (results) => {
+              if (!results.length) {
+                resolve();
+                return;
+              }
+              entries.push(...results);
+              resolve(await readEntries());
+            }, reject);
+          });
+
+        await readEntries();
+
+        const results = await Promise.all(
+          entries.map((child) =>
+            traverseFileTree(child, pathPrefix ? `${pathPrefix}/${entry.name}` : entry.name),
+          ),
+        );
+        return results.flat();
+      }
+
+      return [];
+    },
+    [],
+  );
+
+  const handleDrop = useCallback(
+    async (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      setDragActive(false);
+      if (!user || activeNav !== "My Drive") {
+        return;
+      }
+
+      const items = event.dataTransfer?.items;
+      if (!items) {
+        return;
+      }
+
+      const uploads: Array<{ file: File; relativePath?: string }> = [];
+
+      for (const item of Array.from(items)) {
+        const entry = item.webkitGetAsEntry();
+        if (entry) {
+          const results = await traverseFileTree(entry);
+          uploads.push(...results);
+        } else {
+          const file = item.getAsFile();
+          if (file) {
+            uploads.push({ file });
+          }
+        }
+      }
+
+      if (uploads.length > 0) {
+        await uploadFilesWithPaths(uploads);
+      }
+    },
+    [activeNav, traverseFileTree, uploadFilesWithPaths, user],
+  );
+
+  const handleFileInputChange = async (event: ChangeEvent<HTMLInputElement>) => {
     if (!user) {
       event.target.value = "";
       return;
@@ -392,41 +566,12 @@ function DashboardShell() {
       event.target.value = "";
       return;
     }
-    const selectedFiles = event.target.files
-      ? Array.from(event.target.files)
-      : [];
+    const selectedFiles = event.target.files ? Array.from(event.target.files) : [];
     if (selectedFiles.length === 0) {
       return;
     }
-    setUploading(true);
-    try {
-      const token = await user.getIdToken();
-      for (const file of selectedFiles) {
-        const formData = new FormData();
-        formData.append("file", file);
-        formData.append("folderId", currentFolderId);
-        const response = await fetch("/api/files", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          body: formData,
-        });
-        if (!response.ok) {
-          const data = await response.json().catch(() => ({}));
-          throw new Error(
-            data.error ?? `Failed to upload "${file.name}".`,
-          );
-        }
-      }
-      await fetchFiles();
-    } catch (error) {
-      console.error("Upload failed:", error);
-      alert(error instanceof Error ? error.message : "Failed to upload file.");
-    } finally {
-      setUploading(false);
-      event.target.value = "";
-    }
+    await uploadFilesWithPaths(selectedFiles.map((file) => ({ file })));
+    event.target.value = "";
   };
 
   const handleDeleteClick = (folder: FolderType) => {
@@ -513,8 +658,32 @@ function DashboardShell() {
           onSearchChange={setSearchQuery}
         />
 
-        <main className="flex-1 overflow-y-auto bg-white">
-          <div className="mx-auto w-full max-w-[1200px] p-4 lg:p-6">
+        <main
+          className="relative flex-1 overflow-y-auto bg-white"
+          onDragEnter={(event) => {
+            event.preventDefault();
+            if (activeNav === "My Drive") {
+              setDragActive(true);
+            }
+          }}
+          onDragOver={(event) => {
+            event.preventDefault();
+            if (activeNav === "My Drive") {
+              setDragActive(true);
+            }
+          }}
+          onDragLeave={(event) => {
+            if (event.currentTarget === event.target) {
+              setDragActive(false);
+            }
+          }}
+          onDrop={handleDrop}
+        >
+          <div
+            className={`mx-auto w-full max-w-[1200px] p-4 lg:p-6 ${
+              dragActive ? "border-2 border-dashed border-emerald-400 rounded-xl bg-emerald-50/50" : ""
+            }`}
+          >
             {/* Breadcrumbs */}
             {showBreadcrumbs && (
               <div className="mb-4 flex items-center gap-2 text-sm text-zinc-500 overflow-x-auto">
@@ -570,6 +739,8 @@ function DashboardShell() {
                       multiple
                       onChange={handleFileInputChange}
                       className="hidden"
+                      directory=""
+                      webkitdirectory=""
                     />
                   </div>
                   <div className="flex items-center gap-2 rounded-lg border border-zinc-200 p-1">
@@ -599,6 +770,18 @@ function DashboardShell() {
                 </div>
               )}
             </div>
+
+            {dragActive && (
+              <div className="absolute inset-0 z-50 flex items-center justify-center bg-white/90 backdrop-blur-sm">
+                <div className="rounded-xl border-2 border-dashed border-emerald-500 p-12 text-center">
+                  <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50">
+                    <Upload className="h-8 w-8 text-emerald-600" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-emerald-900">Drop files here</h3>
+                  <p className="mt-1 text-sm text-emerald-600">Upload files or folders instantly</p>
+                </div>
+              </div>
+            )}
 
             {/* Content */}
             {loading ? (
@@ -838,6 +1021,10 @@ function DashboardShell() {
         decodeFileName={decodeFileName}
         formatFileSize={formatFileSize}
         formatFileDate={formatFileDate}
+      />
+      <UploadProgress
+        uploads={uploads}
+        onClose={() => setUploads([])}
       />
     </div>
   );
